@@ -639,42 +639,42 @@ enum ResourceKey {
 สร้าง / อ่าน / แก้ไข / ลบ สินค้า พร้อม SKU
 
 **Acceptance Criteria**
-- [ ] สร้างสินค้าใหม่ได้ โดยระบุ name, category, unit, price, reorderPoint
-- [ ] SKU สร้างอัตโนมัติแบบไม่ซ้ำ (`SKU-1001`, `SKU-1002`, …) หรือผู้ใช้กรอกเองได้
-- [ ] บันทึก SKU ซ้ำ → ระบบปฏิเสธพร้อมข้อความแจ้งเตือน
-- [ ] แสดงรายการสินค้าทั้งหมด พร้อมค้นหา/กรองตามชื่อหรือหมวดหมู่
-- [ ] แก้ไขข้อมูลสินค้าได้ (ยกเว้นการแก้ quantity ตรง ๆ — ต้องผ่าน Stock In/Out หรือ POS)
-- [ ] ลบสินค้าได้ พร้อมยืนยันก่อนลบ
-- [ ] ฟิลด์ตัวเลข (price, reorderPoint) ต้องเป็นค่าไม่ติดลบ มิฉะนั้น validation ปฏิเสธ
+- [x] สร้างสินค้าใหม่ได้ โดยระบุ name, category, unit, price, reorderPoint
+- [x] SKU สร้างอัตโนมัติแบบไม่ซ้ำ (`SKU-1001`, `SKU-1002`, …) หรือผู้ใช้กรอกเองได้
+- [x] บันทึก SKU ซ้ำ → ระบบปฏิเสธพร้อมข้อความแจ้งเตือน
+- [x] แสดงรายการสินค้าทั้งหมด พร้อมค้นหา/กรองตามชื่อหรือหมวดหมู่
+- [x] แก้ไขข้อมูลสินค้าได้ (ยกเว้นการแก้ quantity ตรง ๆ — ต้องผ่าน Stock In/Out หรือ POS)
+- [x] ลบสินค้าได้ พร้อมยืนยันก่อนลบ
+- [x] ฟิลด์ตัวเลข (price, reorderPoint) ต้องเป็นค่าไม่ติดลบ มิฉะนั้น validation ปฏิเสธ
 
 ### F2 — รับสินค้าเข้าคลัง (Stock In)
 บันทึกการรับสินค้าและเพิ่มยอดคงเหลือ
 
 **Acceptance Criteria**
-- [ ] เลือกสินค้า + ระบุจำนวน (> 0) + หมายเหตุ (optional) แล้วบันทึกได้
-- [ ] บันทึกสำเร็จ → สร้าง `StockTransaction(type=IN)` และ `product.quantity` เพิ่มขึ้นตามจำนวน
-- [ ] การสร้างรายการ + อัปเดตยอด อยู่ใน transaction เดียว (ล้มเหลวพร้อมกันทั้งคู่ถ้ามี error)
-- [ ] จำนวน ≤ 0 → validation ปฏิเสธ
+- [x] เลือกสินค้า + ระบุจำนวน (> 0) + หมายเหตุ (optional) แล้วบันทึกได้
+- [x] บันทึกสำเร็จ → สร้าง `StockTransaction(type=IN)` และ `product.quantity` เพิ่มขึ้นตามจำนวน
+- [x] การสร้างรายการ + อัปเดตยอด อยู่ใน transaction เดียว (ล้มเหลวพร้อมกันทั้งคู่ถ้ามี error)
+- [x] จำนวน ≤ 0 → validation ปฏิเสธ
 
 ### F3 — เบิกจ่ายสินค้า (Stock Out) + กันเบิกเกิน
 บันทึกการเบิกและลดยอดคงเหลือ โดยห้ามเบิกเกินที่มี
 
 **Acceptance Criteria**
-- [ ] เลือกสินค้า + ระบุจำนวน (> 0) + หมายเหตุ (ผู้เบิก/แผนก/เหตุผล) แล้วบันทึกได้
-- [ ] **ถ้า `quantity > product.quantity` → ระบบปฏิเสธ ไม่ตัดสต็อก และไม่สร้าง transaction** พร้อมข้อความชัดเจน
-- [ ] บันทึกสำเร็จ → สร้าง `StockTransaction(type=OUT)` และ `product.quantity` ลดลงตามจำนวน
-- [ ] การตรวจยอด + สร้างรายการ + หักสต็อก อยู่ใน `prisma.$transaction` เดียวกัน (กัน race condition)
-- [ ] ยอดคงเหลือหลังเบิกต้องไม่ติดลบเสมอ
+- [x] เลือกสินค้า + ระบุจำนวน (> 0) + หมายเหตุ (ผู้เบิก/แผนก/เหตุผล) แล้วบันทึกได้
+- [x] **ถ้า `quantity > product.quantity` → ระบบปฏิเสธ ไม่ตัดสต็อก และไม่สร้าง transaction** พร้อมข้อความชัดเจน
+- [x] บันทึกสำเร็จ → สร้าง `StockTransaction(type=OUT)` และ `product.quantity` ลดลงตามจำนวน
+- [x] การตรวจยอด + สร้างรายการ + หักสต็อก อยู่ใน `prisma.$transaction` เดียวกัน (กัน race condition)
+- [x] ยอดคงเหลือหลังเบิกต้องไม่ติดลบเสมอ
 
 ### F4 — Dashboard + แจ้งเตือนสินค้าใกล้หมด
 ภาพรวมสต็อกและรายการที่ต้องเติม
 
 **Acceptance Criteria**
-- [ ] แสดงสรุป: จำนวนสินค้าทั้งหมด, มูลค่าสต็อกรวม (Σ quantity × price), จำนวนรายการใกล้หมด
-- [ ] แสดงรายการสินค้าที่ `quantity ≤ reorderPoint` เป็นการ์ด/ตารางแจ้งเตือน
-- [ ] มี Badge/ตัวเลขนับจำนวนสินค้าใกล้หมดใน navigation
-- [ ] แสดงรายการเคลื่อนไหวล่าสุด (recent transactions)
-- [ ] เมื่อ Stock In จนเกิน reorderPoint แล้ว รายการนั้นหลุดจากการแจ้งเตือนทันที
+- [x] แสดงสรุป: จำนวนสินค้าทั้งหมด, มูลค่าสต็อกรวม (Σ quantity × price), จำนวนรายการใกล้หมด
+- [x] แสดงรายการสินค้าที่ `quantity ≤ reorderPoint` เป็นการ์ด/ตารางแจ้งเตือน
+- [x] มี Badge/ตัวเลขนับจำนวนสินค้าใกล้หมดใน navigation
+- [x] แสดงรายการเคลื่อนไหวล่าสุด (recent transactions)
+- [x] เมื่อ Stock In จนเกิน reorderPoint แล้ว รายการนั้นหลุดจากการแจ้งเตือนทันที
 
 ### F5 — ขายหน้าร้าน (POS Checkout)
 - [ ] เพิ่มสินค้าลงตะกร้าได้ (ค้นหาด้วยชื่อ/SKU), ปรับจำนวน/ลบรายการก่อน checkout จริง
@@ -980,35 +980,35 @@ enum ResourceKey {
 
 ## 8. แผนการพัฒนา
 
-### ⏭️ Phase 1 — Foundation (วันที่ 1)
+### ✅ Phase 1 — Foundation (วันที่ 1)
 ตั้งรากฐานโปรเจกต์ ฐานข้อมูล และสมองของโปรเจกต์
 
-- [ ] ตั้งโปรเจกต์ Next.js 16 (App Router) + TypeScript ด้วย pnpm
-- [ ] ติดตั้งและตั้งค่า Tailwind CSS v4 + shadcn/ui
-- [ ] วางโครง **route group 2 กลุ่ม** `app/(staff)/` + `app/(customer)/` เป็น root layout แยกกัน พร้อม
+- [x] ตั้งโปรเจกต์ Next.js 16 (App Router) + TypeScript ด้วย pnpm
+- [x] ติดตั้งและตั้งค่า Tailwind CSS v4 + shadcn/ui
+- [x] วางโครง **route group 2 กลุ่ม** `app/(staff)/` + `app/(customer)/` เป็น root layout แยกกัน พร้อม
       design token 2 ชุดใน `app/globals.css` (`[data-theme="staff"]` / `[data-theme="customer"]`)
       ตาม [§6a โครงสร้าง Route Group และธีม](#6a-routes--ui-mjd-mobile-order) — ทำตั้งแต่แรกจะได้ไม่ต้อง
       รื้อโครง `app/` ตอน Phase 9
-- [ ] ติดตั้ง Prisma + เขียน schema: `Product`, `StockTransaction`, `enum TransactionType {IN, OUT}`
-- [ ] เชื่อมต่อ PostgreSQL (ตั้ง `DATABASE_URL` ใน `.env`)
-- [ ] รัน migration ครั้งแรก (`prisma migrate dev --name init`)
-- [ ] เขียน seed script + Seed ข้อมูลตัวอย่าง **SKU-1001 ถึง SKU-1007**
-- [ ] วาง `CLAUDE.md` (สมองของโปรเจกต์: โครงสร้าง, คำสั่ง, convention)
-- [ ] ตรวจสอบ: `pnpm dev` เปิดได้ + `prisma studio` เห็นข้อมูล seed 7 รายการ
+- [x] ติดตั้ง Prisma + เขียน schema: `Product`, `StockTransaction`, `enum TransactionType {IN, OUT}`
+- [x] เชื่อมต่อ PostgreSQL (ตั้ง `DATABASE_URL` ใน `.env`)
+- [x] รัน migration ครั้งแรก (`prisma migrate dev --name init`)
+- [x] เขียน seed script + Seed ข้อมูลตัวอย่าง **SKU-1001 ถึง SKU-1007**
+- [x] วาง `CLAUDE.md` (สมองของโปรเจกต์: โครงสร้าง, คำสั่ง, convention)
+- [x] ตรวจสอบ: `pnpm dev` เปิดได้ + `prisma studio` เห็นข้อมูล seed 7 รายการ
 
-### ⏭️ Phase 2 — Core Features (วันที่ 2)
+### ✅ Phase 2 — Core Features (วันที่ 2)
 ฟีเจอร์หลักที่ใช้งานได้จริง
 
-- [ ] CRUD สินค้าครบวงจร (Create / Read / Update / Delete) ผ่าน Server Actions + Zod
-- [ ] หน้ารายการสินค้า + ค้นหา/กรอง
-- [ ] Stock In: ฟอร์ม → `prisma.$transaction` (สร้าง txn + เพิ่ม quantity)
-- [ ] Stock Out: ฟอร์ม → `prisma.$transaction` (ตรวจยอด + **กันเบิกเกิน** + สร้าง txn + ลด quantity)
-- [ ] Dashboard: สรุปยอด + มูลค่าสต็อก + รายการเคลื่อนไหวล่าสุด
-- [ ] แจ้งเตือนสินค้าใกล้หมด (`quantity ≤ reorderPoint`) + Badge นับจำนวน
-- [ ] Custom Slash Commands สำหรับงานที่ทำบ่อย (เช่น สร้าง component, generate CRUD, สร้าง migration)
-- [ ] ระบบ Auth (Better Auth): login / register / forgot-password / reset-password + guard ทุกหน้าด้วย proxy
+- [x] CRUD สินค้าครบวงจร (Create / Read / Update / Delete) ผ่าน Server Actions + Zod
+- [x] หน้ารายการสินค้า + ค้นหา/กรอง
+- [x] Stock In: ฟอร์ม → `prisma.$transaction` (สร้าง txn + เพิ่ม quantity)
+- [x] Stock Out: ฟอร์ม → `prisma.$transaction` (ตรวจยอด + **กันเบิกเกิน** + สร้าง txn + ลด quantity)
+- [x] Dashboard: สรุปยอด + มูลค่าสต็อก + รายการเคลื่อนไหวล่าสุด
+- [x] แจ้งเตือนสินค้าใกล้หมด (`quantity ≤ reorderPoint`) + Badge นับจำนวน
+- [x] Custom Slash Commands สำหรับงานที่ทำบ่อย (`/action`, `/check`, `/migration`, `/create-crud`, `/add-feature`, `/review-code` ใน `.claude/commands/`)
+- [x] ระบบ Auth (Better Auth): login / register / forgot-password / reset-password + guard ทุกหน้าด้วย proxy
       (Next.js 16)
-- [ ] หน้าเสริมตาม design + เชื่อมลิงก์ใน Sidebar/ProfileMenu: **รายงาน** (`/reports` — สรุป 30 วัน + กราฟ),
+- [x] หน้าเสริมตาม design + เชื่อมลิงก์ใน Sidebar/ProfileMenu: **รายงาน** (`/reports` — สรุป 30 วัน + กราฟ),
       **ผู้ใช้งาน** (`/users` — list จากตาราง user), **ตั้งค่า** (`/settings` — แก้โปรไฟล์/เปลี่ยนรหัสผ่านผ่าน Better Auth)
 
 ### ⏭️ Phase 2.5 — POS Module (แทรกต่อจาก Phase 2 ก่อนเริ่ม Phase 3)
@@ -1047,10 +1047,10 @@ enum ResourceKey {
 ### ⏭️ Phase 3 — Agentic Quality (วันที่ 3)
 ยกระดับคุณภาพด้วย agent, MCP และ automation
 
-- [ ] Sub-agent: `code-reviewer` (รีวิวโค้ดตาม convention โปรเจกต์)
-- [ ] Sub-agent: `test-writer` (เขียน/เติม test ให้ฟีเจอร์)
-- [ ] Sub-agent: `security-auditor` (ตรวจช่องโหว่/แนวปฏิบัติด้านความปลอดภัย)
-- [ ] MCP integration: **PostgreSQL MCP** (query/inspect DB) + **GitHub MCP** (issue/PR)
+- [x] Sub-agent: `code-reviewer` (รีวิวโค้ดตาม convention โปรเจกต์)
+- [x] Sub-agent: `test-writer` (เขียน/เติม test ให้ฟีเจอร์)
+- [x] Sub-agent: `security-auditor` (ตรวจช่องโหว่/แนวปฏิบัติด้านความปลอดภัย)
+- [x] MCP integration: **PostgreSQL MCP** (query/inspect DB) + **GitHub MCP** (issue/PR)
       — `.mcp.json` (อยู่ใน `.gitignore` เพราะมี credential) + `.mcp.json.example` ที่ commit ไว้ให้ทีมคัดลอก
       > ⚠️ กับดัก: connection string ใน `.mcp.json` ต้องตรงกับ `DATABASE_URL` ใน `.env` เป๊ะ ๆ
       > (host/port/user/ชื่อฐาน) ถ้าชี้ไปฐานที่ไม่มีอยู่จริง MCP จะต่อไม่ติดแบบเงียบ ๆ ·

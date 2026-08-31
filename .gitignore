@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 /generated/prisma
+
+# MCP — มี credential ห้าม commit (คัดลอกจาก .mcp.json.example แล้วเติมรหัสผ่านเอง)
+.mcp.json

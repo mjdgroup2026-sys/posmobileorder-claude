@@ -7,9 +7,12 @@ POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **M
 ร้านอาหารแบบ table service, `Sale.channel = MOBILE_ORDER`) ทั้งสองช่องทางปิดบิลเข้า `Sale`/`SaleItem` ชุดเดียวกัน
 ไม่ใช่ระบบแยก — ดูหัวข้อ [MJD Mobile Order](#-mjd-mobile-order-phase-612--ยังไม่เริ่ม) ท้ายไฟล์นี้
 
-> ⚠️ **โปรเจกต์นี้ยังไม่เริ่มเขียนโค้ด** — ในโฟลเดอร์มีแค่ `CLAUDE.md`, `Docs/`, `mobile-order.html`
-> ทุกไฟล์ / ฟังก์ชัน / หน้าเว็บ / คำสั่ง ที่เอกสารนี้พูดถึงคือ **ข้อกำหนดว่าต้องสร้างให้เป็นแบบนั้น**
-> ไม่ใช่ของที่มีอยู่แล้ว — ห้ามสมมติว่าเปิดอ่านได้ทันที (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
+> ✅ **Phase 1–2 เสร็จแล้ว** — โครงโปรเจกต์ ฐานข้อมูล Auth และฟีเจอร์คลังสินค้าใช้งานได้จริง
+> ส่วน Phase 2.5 ขึ้นไป (POS, MJD Mobile Order) ยังไม่ได้ทำ (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
+>
+> **dev server รันที่ port 3001** (`pnpm dev`) เพราะ container `pos-app` ของโปรเจกต์ POS_Shop เดิม
+> ยึด 3000 อยู่ · `BETTER_AUTH_URL` ใน `.env` ต้องตรงกับ origin ที่ใช้จริงเสมอ ไม่งั้น Better Auth
+> จะตอบ `INVALID_ORIGIN` ตอน sign-up/sign-in
 
 **สัญญาอ้างอิงหลักคือ `Docs/spec.md`** — ทุกฟีเจอร์ ทุกกติกาธุรกิจ และ checklist ของแต่ละ Phase อยู่ในไฟล์นั้น
 ทำงานเสร็จข้อไหนให้ติ๊ก checkbox ใน spec ด้วย
@@ -68,23 +71,43 @@ script เหล่านี้ต้องตั้งใน `package.json` ต
 
 ## การทดสอบ
 
-ตั้งค่าให้ `pnpm test` รัน Vitest — integration test ยิงลง PostgreSQL จริง (`posdb_test` แยกจาก dev) ·
-`pnpm test:watch` โหมด watch
+`pnpm test` รัน Vitest 4 — integration test ยิงลง PostgreSQL จริง (ฐาน **`posmobileorderdb_test`**
+แยกจาก dev) · `pnpm test:watch` โหมด watch · `pnpm test:unit` / `pnpm test:integration` รันแยกกลุ่ม
 
 Server Action ทดสอบได้โดย mock `next/cache` + `@/lib/session` แล้ว `await import()` action ตัวจริง
-(`'use server'` เป็นแค่ string literal เมื่อรันใน vitest) — เทสตัวแรกที่เขียนควรเป็น `tests/stock-out.test.ts`
-เพื่อใช้เป็นแม่แบบให้ไฟล์อื่นต่อไป
+(`'use server'` เป็นแค่ string literal เมื่อรันใน vitest) — แม่แบบของไฟล์อื่นคือ
+**`__tests__/integration/stock-out.test.ts`**
+
+โครงไฟล์เทส (โฟลเดอร์ **`__tests__/`** ไม่ใช่ `tests/`):
+
+```
+__tests__/
+├── setup.ts · stubs/server-only.ts · helpers/{db,form}.ts
+├── unit/         — mock Prisma ด้วย vitest-mock-extended ไม่แตะ DB
+├── integration/  — ยิง posmobileorderdb_test จริง
+└── components/   — @testing-library/react (ใส่ docblock `// @vitest-environment jsdom` บรรทัดแรก)
+```
 
 - ต้อง alias `server-only` เป็นโมดูลว่างใน `vitest.config.mts` — Action ที่ดึง `lib/queries.ts` จะได้
   import ได้เลย **ไม่ต้อง `vi.mock('server-only')` รายไฟล์**
+- **Vitest 4 ตัด `environmentMatchGlobs` ออกแล้ว** — ตั้ง `environment: "node"` เป็นค่าเริ่มต้น
+  แล้วใช้ docblock `// @vitest-environment jsdom` ในไฟล์เทส component แทน
+- `fileParallelism: false` เพราะ integration test ใช้ฐานเดียวกันแล้ว `TRUNCATE` ชนกัน
 - `Sale.cashierId` เป็น FK ไปตาราง `user` — เทสต้อง `upsert` ผู้ใช้ทดสอบก่อนขาย
-- ฐานทดสอบยังไม่มีหรือยังไม่ migrate → `pnpm db:test:migrate` (ต้องมีฐาน `posdb_test` ก่อน:
-  `docker exec pos-db psql -U posuser -d postgres -c "CREATE DATABASE posdb_test;"`)
+- ฐานทดสอบยังไม่มีหรือยังไม่ migrate → `pnpm db:test:migrate` (อ่าน `DATABASE_URL` จาก `.env.test`)
+  ต้องสร้างฐานก่อนด้วย:
+  ```bash
+  docker exec posmobileorder-postgres psql -U posmobileorderuser -d postgres \
+    -c "CREATE DATABASE posmobileorderdb_test;"
+  ```
+- `__tests__/helpers/db.ts` มี `assertTestDatabase()` ที่ throw ถ้าชื่อฐานไม่ลงท้าย `_test` —
+  กันเทส `TRUNCATE` ฐาน dev ทิ้ง **ห้ามถอดออก**
 - กติกาที่แตะ **สต็อกและเงิน** ต้องมีเทสครอบทุกข้อ (โดยเฉพาะ concurrent ตามกติกาข้อ 4 และข้อ 7)
 
 ## โครงสร้างโปรเจกต์ (เป้าหมายที่ต้องสร้าง)
 
-components/icons.tsx — ไอคอน Hugeicons Stroke Rounded ทั้งชุด เพิ่มที่นี่ที่เดียว
+components/icons.tsx — re-export ไอคอนจาก lucide-react ทั้งชุด เพิ่ม/เปลี่ยนที่นี่ที่เดียว
+                       (หน้าอื่นห้าม import จาก lucide-react ตรง ๆ)
 components/ui/ — shadcn/ui อย่าแก้มือ ใช้ `pnpm dlx shadcn@latest add <ชื่อ>`
 app/globals.css — design system ทั้งหมด (tokens + component classes)
 lib/queries.ts — ฟังก์ชันอ่านข้อมูลทั้งหมด (`import 'server-only'`)
@@ -176,7 +199,7 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 
 ## กับดักที่ต้องระวัง
 
-บทเรียนที่ยกมาจากโปรเจกต์ StockApp เดิม — ยังไม่เกิดในโปรเจกต์นี้เพราะยังไม่ได้เขียนโค้ด แต่จะเจอแน่ถ้าไม่ระวัง
+ข้อที่มี 🔥 คือ **เจอจริงในโปรเจกต์นี้แล้ว** ที่เหลือยกมาจากโปรเจกต์ StockApp เดิม — จะเจอแน่ถ้าไม่ระวัง
 
 - **หลัง `prisma generate` ต้องรีสตาร์ต dev server** ไม่งั้น Turbopack ใช้ module graph เก่า แล้วการเขียน DB
   "สำเร็จ" (HTTP 200) โดยไม่มีแถวถูกบันทึกจริง
@@ -184,6 +207,27 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   รุ่นเก่ายัง generate ไม่ครบ — ถ้าเพิ่ม plugin แล้ว schema เพี้ยน ให้เทียบกับ
   `node_modules/.pnpm/@better-auth+core@*/node_modules/@better-auth/core/dist/db/get-tables.mjs` เป็นแหล่งจริง
 - **`prisma migrate dev` ล้มเมื่อ non-interactive** ถ้ามี warning (เช่น เพิ่ม unique constraint) — ใช้ทางเลี่ยงใน `/migration`
+- 🔥 **เพิ่ม/แก้ `@@map` = Prisma สั่ง DROP ตารางทิ้ง ข้อมูลหายหมด** — Prisma **ไม่รู้จักการ rename**
+  มันเห็นเป็น "ตารางเก่าหาย + ตารางใหม่โผล่" เลยสร้าง migration เป็น `DROP TABLE` + `CREATE TABLE`
+  (ตอนเพิ่ม `@@map("product")` มันเตือนว่า *"about to drop the `Product` table, which is not empty (7 rows)"*)
+  → **ห้ามปล่อยให้ Prisma generate migration เอง** ให้เขียน `migration.sql` เองเป็น `ALTER TABLE ... RENAME TO ...`
+  แล้วอย่าลืม rename **index / primary key / foreign key / not-null constraint** ให้ครบด้วย มิฉะนั้นชื่อจะไม่ตรง
+  กับที่ Prisma คาดหวังแล้วเกิด drift · ขั้นตอนที่ใช้ได้จริง:
+  1. `mkdir prisma/migrations/<timestamp>_<name>/` แล้วเขียน `migration.sql` เอง
+  2. รันด้วย `docker exec -i <container> psql -U <user> -d <db> -v ON_ERROR_STOP=1 --single-transaction < migration.sql`
+  3. `prisma migrate resolve --applied <timestamp>_<name>`
+  4. **ยืนยันเสมอ** ด้วย `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`
+     ต้องได้ `No difference detected.`
+  > ⚠️ **`prisma db execute --file ... --schema ...` เงียบ ๆ ไม่ทำงาน** — มันพ่นหน้า help ออกมาแทนแล้ว exit 0
+  > ถ้าเผลอสั่ง `migrate resolve --applied` ต่อ จะได้สถานะพังคือ migration ถูกบันทึกว่า applied ทั้งที่ SQL
+  > ยังไม่ได้รันเลย **ต้องเช็ค `\dt` ในฐานจริงทุกครั้งก่อน resolve**
+- 🔥 **`$queryRaw` ไม่ผ่าน `@@map`** — ชื่อตารางใน raw SQL ต้องเป็น**ชื่อจริงในฐาน** (snake_case) ไม่ใช่ชื่อ model
+  เช่น `FROM "product"` ไม่ใช่ `FROM "Product"` · อันตรายเพราะ SQL เป็น string → **`tsc` กับ `pnpm build` ผ่านฉลุย
+  แต่พังตอน runtime** ทุกครั้งที่เปลี่ยน `@@map` ต้องไล่แก้ raw SQL ให้ครบด้วย:
+  ```bash
+  grep -rn '\$queryRaw\|\$executeRaw' --include='*.ts' . --exclude-dir=node_modules --exclude-dir=generated
+  ```
+  ปัจจุบันมี raw SQL อยู่ที่ `lib/queries.ts` (6 จุด) และ `app/actions/products.ts` (1 จุด — `nextSku()`)
 - **Client Component ที่ใช้ `useSearchParams()` ต้องมี `<Suspense>` ครอบ** ถ้าหน้านั้นถูก prerender แบบ static
   (หน้า auth ทั้งหมดเข้าข่าย) ไม่งั้น `pnpm build` จะพัง
 - **Next.js 16** `params`/`searchParams`/`cookies()`/`headers()` เป็น Promise ต้อง `await` ทุกครั้ง
@@ -200,13 +244,17 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 
 ## สถานะการพัฒนา
 
-> ⚠️ **ยังไม่เริ่มพัฒนา — Phase 1–12 ยังไม่ได้ทำสักข้อ** checkbox ใน `Docs/spec.md` ว่างทั้งหมด
-> และในโฟลเดอร์โปรเจกต์**ยังไม่มีโค้ดเลย** (มีแค่ `CLAUDE.md`, `Docs/`, `mobile-order.html`)
-> — ทุกอย่างในไฟล์นี้ที่พูดถึงไฟล์/ฟังก์ชัน/หน้าเว็บ คือ **ข้อกำหนดว่าจะสร้างให้เป็นแบบนั้น** ไม่ใช่สิ่งที่มีอยู่แล้ว
+**✅ Phase 1 (Foundation) และ Phase 2 (Core Features) ปิดครบแล้ว** — checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสอง Phase
 
-ลำดับงานและ acceptance criteria ทั้งหมดอยู่ที่ [`Docs/spec.md` §8 แผนการพัฒนา](Docs/spec.md) — เริ่มจาก Phase 1
-(Foundation) แล้วไล่ตามลำดับ: Core Features → POS Module → Agentic Quality → Team/Container → Production →
-Phase 6–12 MJD Mobile Order
+ของที่ใช้งานได้จริงตอนนี้:
+- Auth ครบวงจร: สมัคร / เข้าสู่ระบบ / ลืมรหัสผ่าน / ตั้งรหัสผ่านใหม่ / เปลี่ยนรหัสผ่าน + `proxy.ts` กันทุกหน้า
+- คลังสินค้า: CRUD สินค้า (SKU auto-gen), รับเข้า, เบิกจ่าย (กันเบิกเกินแบบ concurrent), Dashboard,
+  แจ้งเตือนใกล้หมด + badge, รายงาน 30 วัน, ผู้ใช้งาน, ตั้งค่าโปรไฟล์
+- ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
+  seed ไว้ 7 รายการ SKU-1001…SKU-1007
+
+**ยังไม่ได้ทำ**: Phase 2.5 (POS Module) · Phase 3–5 (Agentic Quality / Container / Production) ·
+Phase 6–12 (MJD Mobile Order) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
 เป้าหมายตอนขึ้น production: https://mobileorder.jayjayservices.com (CI/CD อัตโนมัติจาก `main`,
 backup รายวัน + alert ผ่าน `ops/`) — **ยังไม่ได้ deploy**
