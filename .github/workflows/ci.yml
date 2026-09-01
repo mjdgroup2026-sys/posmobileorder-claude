@@ -1,0 +1,148 @@
+# CI ของ MJD Mobile Order (posmobileorder)
+#   test           — typecheck + vitest ยิงลง PostgreSQL จริงใน service container
+#   build-and-push — build image แล้ว push ขึ้น ghcr.io เฉพาะ push เข้า main
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# push ซ้อนกันบน ref เดียวกัน ให้ยกเลิกอันเก่า — ยกเว้น main ที่ต้องได้ image ครบทุก commit
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  NODE_VERSION: "22"
+  # ต้องตรงกับ packageManager ใน package.json เป๊ะ ๆ ไม่งั้น pnpm/action-setup
+  # จะฟ้อง "Multiple versions of pnpm specified" แล้วจบทันที
+  PNPM_VERSION: "11.22.0"
+
+jobs:
+  test:
+    name: Typecheck & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # ⚠️ ต้องเป็น 18 — migration 20260828093455_add-auth-models ใช้
+        # ALTER TABLE ... RENAME CONSTRAINT ของ NOT NULL ซึ่งมีเฉพาะ PostgreSQL 18
+        # บน 16 จะล้มด้วย 42704 constraint does not exist
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: posmobileorderuser
+          POSTGRES_PASSWORD: ci-test-password
+          # ชื่อต้องลงท้าย _test ไม่งั้น assertTestDatabase() ใน __tests__/helpers/db.ts จะ throw
+          POSTGRES_DB: posmobileorderdb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U posmobileorderuser -d posmobileorderdb_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://posmobileorderuser:ci-test-password@localhost:5432/posmobileorderdb_test?schema=public
+      # __tests__/setup.ts จะ override ด้วย .env.test ถ้าไฟล์นั้นมีอยู่ — บน CI ไม่มี
+      # (อยู่ใน .gitignore) ค่าจึงมาจาก env ของ job นี้ตรง ๆ
+      BETTER_AUTH_SECRET: ci-test-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:3001
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # generated/prisma อยู่ใน .gitignore — ไม่ generate ก่อน typecheck จะพังทุกไฟล์
+      # ที่ import "@/generated/prisma/client"
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # ใช้ migrate deploy ตรง ๆ ไม่ใช่ pnpm db:test:migrate เพราะ script นั้นอ่าน .env.test
+      # ซึ่งไม่มีบน CI · DATABASE_URL มาจาก env ของ job แล้ว
+      - name: Migrate test database
+        run: pnpm exec prisma migrate deploy
+
+      - name: Test
+        run: pnpm test
+
+  build-and-push:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+    needs: test
+    # เฉพาะ push เข้า main — PR ไม่ push image (และ fork ไม่มีสิทธิ์เขียน ghcr อยู่แล้ว)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image name
+        # ghcr ต้องเป็นตัวพิมพ์เล็กทั้งหมด — ชื่อ org/repo ที่มีตัวใหญ่จะโดนปฏิเสธ
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ⚠️ ถ้าวันหลังมีตัวแปร NEXT_PUBLIC_* ต้องส่งเป็น build-args ตรงนี้
+      # เพราะถูก inline ตอน next build เท่านั้น ตั้งตอน runtime ไม่มีผลกับ bundle ฝั่งเบราว์เซอร์
+      - name: Build & push app image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runner
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          # แยก scope กับ image migrate ไม่งั้นสองงานเขียนทับ cache กันเอง
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,scope=runner,mode=max
+
+      # ⚠️ ต้อง target: migrator เท่านั้น — stage อื่นไม่มี prisma/ + prisma7.config.ts
+      # ทำให้ prisma migrate deploy ฟ้อง "Could not find Prisma Schema" แล้ว deploy
+      # "สำเร็จ" ทั้งที่ DB ไม่มีตาราง
+      - name: Build & push migrate image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest-migrate
+            ${{ env.IMAGE }}:sha-${{ github.sha }}-migrate
+          cache-from: type=gha,scope=migrator
+          cache-to: type=gha,scope=migrator,mode=max

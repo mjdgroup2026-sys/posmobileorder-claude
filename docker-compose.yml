@@ -1,0 +1,112 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MJD Mobile Order (posmobileorder) — stack เต็มชุด: db → migrate → app
+#
+#   cp .env.example .env.docker  (แล้วเติมค่าจริง)
+#   docker compose --env-file .env.docker up -d --build
+#
+# ⚠️ ต้องส่ง --env-file เสมอ — ถ้าไม่ส่ง compose จะ auto-load ไฟล์ .env ของ dev มาแทน
+#    แล้วได้ BETTER_AUTH_URL=http://localhost:3001 (ของ pnpm dev) ติดไปกับ container
+#    ผลคือ Better Auth ตอบ INVALID_ORIGIN ตอน sign-in ทั้งที่แอปขึ้นปกติ
+#
+# ตัวแปรที่ "บังคับ" มีแค่ POSTGRES_PASSWORD กับ BETTER_AUTH_SECRET (ใช้ :? ไม่ใช่ :-)
+#    ที่เหลือมี default ให้หมด · ความลับต้องไม่มี default เด็ดขาด ไม่งั้นเผลอขึ้น production
+#    ด้วยรหัสผ่านที่เขียนไว้ในไฟล์ที่ commit
+#
+# ลำดับการบูตถูกบังคับด้วย depends_on:
+#   db (healthy) → migrate (จบด้วย exit 0) → app
+# ─────────────────────────────────────────────────────────────────────────────
+name: posmobileorder
+
+# DATABASE_URL ของทั้ง migrate และ app ชี้เข้า service "db" ผ่าน network ภายใน (port 5432)
+# ไม่ใช่ port ที่ map ออก host — เขียนไว้ที่เดียวแล้ว &db-url / *db-url ใช้ซ้ำ
+x-database-url: &db-url
+  DATABASE_URL: "postgresql://${POSTGRES_USER:-posmobileorderuser}:${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD — ดูข้อกำหนดอักขระใน .env.example}@db:5432/${POSTGRES_DB:-posmobileorderdb}?schema=public"
+
+services:
+  db:
+    # ⚠️ ต้องเป็น 18 เท่านั้น ห้ามลดเป็น 16 — migration 20260828093455_add-auth-models
+    # มี ALTER TABLE ... RENAME CONSTRAINT "Product_id_not_null" ซึ่ง PostgreSQL เพิ่งเก็บ
+    # NOT NULL constraint ลง pg_constraint ตอน 18 · บน 16 จะล้มด้วย 42704 (พิสูจน์มาแล้ว)
+    # และเป็นเวอร์ชันเดียวกับ container dev (posmobileorder-postgres) อยู่แล้ว
+    image: postgres:18-alpine
+    container_name: posmobileorder-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-posmobileorderuser}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD — ดูข้อกำหนดอักขระใน .env.example}"
+      POSTGRES_DB: ${POSTGRES_DB:-posmobileorderdb}
+      # กัน locale เพี้ยนตอน initdb — ชื่อสินค้าเป็นภาษาไทย
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      # PG 18+ เก็บข้อมูลใน subdirectory ตามเลข major (/var/lib/postgresql/18/docker)
+      # ต้อง mount ที่ /var/lib/postgresql เท่านั้น — ถ้าใช้ .../data แบบ PG 16 คอนเทนเนอร์จะ
+      # ตายตั้งแต่บูตพร้อมข้อความ "unused mount/volume" แล้ว healthcheck ไม่มีวันเขียว
+      - postgres_data:/var/lib/postgresql
+    ports:
+      # ค่าเริ่มต้น 5438 เพราะ container posmobileorder-postgres ของ dev ยึด 5437 อยู่
+      - "${DB_PORT:-5438}:5432"
+    healthcheck:
+      # ต้องระบุ -d ด้วย ไม่งั้น pg_isready ตอบ ready ตั้งแต่ initdb ยังสร้างฐานไม่เสร็จ
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-posmobileorderuser} -d ${POSTGRES_DB:-posmobileorderdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - pos-network
+
+  migrate:
+    # ⚠️ ต้อง target: migrator เท่านั้น — stage อื่นไม่มี prisma/ + prisma7.config.ts
+    image: posmobileorder:latest-migrate
+    build:
+      context: .
+      target: migrator
+    container_name: posmobileorder-migrate
+    # งานครั้งเดียวจบ ห้าม restart ไม่งั้น compose วนรัน seed ซ้ำไม่รู้จบ
+    restart: "no"
+    environment:
+      <<: *db-url
+    # migrate deploy ต้องผ่านก่อนถึงจะ seed — ใช้ && ไม่ใช่ ; เพื่อให้ exit code เป็นของจริง
+    # (app รอ service_completed_successfully อยู่ ถ้ากลืน error ไว้ app จะขึ้นทั้งที่ตารางไม่ครบ)
+    command: ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm exec prisma db seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pos-network
+
+  app:
+    image: posmobileorder:latest
+    build:
+      context: .
+      target: runner
+    container_name: posmobileorder-app
+    restart: unless-stopped
+    environment:
+      <<: *db-url
+      NODE_ENV: production
+      # ต้องตรงกับ origin ที่เปิดใช้จริง ไม่งั้น Better Auth ตอบ INVALID_ORIGIN ตอน sign-in
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${APP_PORT:-3002}}
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?ยังไม่ได้ตั้ง BETTER_AUTH_SECRET — สร้างด้วย openssl rand -base64 32}"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+    ports:
+      # container ฟัง 3000 เสมอ (ENV PORT ใน Dockerfile) — เปลี่ยนได้เฉพาะฝั่ง host
+      # 3000 = pos-app เดิม, 3001 = dev server → ค่าเริ่มต้นจึงเป็น 3002
+      - "${APP_PORT:-3002}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - pos-network
+
+networks:
+  pos-network:
+    name: pos-network
+
+volumes:
+  postgres_data:
+    name: postgres_data

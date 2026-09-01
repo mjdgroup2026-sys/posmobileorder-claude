@@ -1072,7 +1072,7 @@ enum ResourceKey {
 - [ ] PR template + แนวทาง code review — [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
       มี checklist แยกตามสิ่งที่แตะ (สต็อก/เงิน · Server Action · schema) และหัวข้อ "ผลกระทบตอน deploy"
       · แนวทาง review 5 ข้อเรียงตามความสำคัญอยู่ท้าย `CONTRIBUTING.md`
-- [ ] `Dockerfile` แบบ multi-stage build (ใช้ Next.js `output: 'standalone'`)
+- [x] `Dockerfile` แบบ multi-stage build (ใช้ Next.js `output: 'standalone'`)
       — stage `runner` (แอป) + stage `migrator` (prisma CLI + schema + migrations + seed)
 - [ ] `docker-compose.yml` (บริการ app + postgres) + healthcheck
       · `docker-compose.prod.yml` (stack บน VPS) ต้อง commit เข้า git ด้วย — CI scp ทับไฟล์บน server ทุกครั้งที่ deploy

@@ -1,0 +1,41 @@
+# ของที่ต้อง build ใหม่ในภาพเสมอ ห้ามลากของจากเครื่อง dev เข้าไป
+node_modules
+.next
+generated
+out
+build
+
+# ความลับ — ห้ามหลุดเข้า image เด็ดขาด
+.env
+.env.*
+.mcp.json
+
+# git / เครื่องมือ dev
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+.windsurf
+
+# เทสและเอกสาร ไม่ต้องใช้ตอน build/serve
+__tests__
+vitest.config.mts
+coverage
+Docs
+*.md
+!README.md
+mobile-order.html
+
+# ระบบปฏิบัติการ / log
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# docker เอง
+Dockerfile
+.dockerignore
+docker-compose*.yml

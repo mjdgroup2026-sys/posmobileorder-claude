@@ -7,6 +7,8 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    // ทำให้ `prisma db seed` เรียกได้ (compose service migrate ใช้ต่อจาก migrate deploy)
+    seed: "tsx prisma/seed.ts",
   },
   datasource: {
     url: process.env["DATABASE_URL"],
