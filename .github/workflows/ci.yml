@@ -11,7 +11,66 @@ jobs:
   test:
     name: Type check & test
     runs-on: ubuntu-latest
-    # ... (setup pnpm/node, pnpm install, prisma migrate deploy, tsc --noEmit, pnpm test)
+
+    # integration test ยิงลง PostgreSQL จริง (ดู __tests__/integration/)
+    # ⚠️ ชื่อฐานต้องลงท้ายด้วย _test ไม่งั้น assertTestDatabase() ใน
+    # __tests__/helpers/db.ts จะ throw ทิ้งทั้ง suite
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: posmobileorderuser
+          POSTGRES_PASSWORD: posmobileorderpass
+          POSTGRES_DB: posmobileorderdb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U posmobileorderuser -d posmobileorderdb_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # .env.test ถูก .gitignore ครอบไว้ จึงไม่มีบน runner — __tests__/setup.ts จะข้าม
+      # การ loadEnv แล้วใช้ค่าจาก env ของ job นี้แทน (ค่าเดียวกับ .env.test บนเครื่อง)
+      # port เป็น 5432 ไม่ใช่ 5437 เพราะ service container map ออกมาตรง ๆ
+      DATABASE_URL: postgresql://posmobileorderuser:posmobileorderpass@localhost:5432/posmobileorderdb_test?schema=public
+      BETTER_AUTH_SECRET: test-secret-do-not-use-in-production
+      BETTER_AUTH_URL: http://localhost:3001
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ไม่ระบุ version — action อ่านจาก field "packageManager" ใน package.json (pnpm@11.22.0)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # /generated/prisma อยู่ใน .gitignore — ถ้าไม่ generate ก่อน tsc จะหา
+      # @/generated/prisma ไม่เจอแล้ว typecheck ล้มทันที
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      # ใช้ prisma migrate deploy ตรง ๆ ไม่ใช่ pnpm db:test:migrate เพราะ script นั้น
+      # อ่านค่าผ่าน dotenv -e .env.test ซึ่งไม่มีบน runner
+      # (prisma7.config.ts ถูก auto-detect และดึง url จาก process.env.DATABASE_URL)
+      - name: Run migrations on test database
+        run: pnpm exec prisma migrate deploy
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
   # build + push image (เฉพาะ push main และต้องรอ test ผ่านก่อน)
   build-and-push:
@@ -52,7 +111,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # image migrate (build จาก stage deps) → :latest-migrate + :sha-xxxx-migrate
+      # image migrate (build จาก stage migrator) → :latest-migrate + :sha-xxxx-migrate
       - name: Docker metadata (migrate image tags)
         id: meta-migrate
         uses: docker/metadata-action@v5
@@ -67,7 +126,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: deps        # <-- build แค่ถึง stage deps (มี prisma CLI + schema + tsx)
+          target: migrator    # <-- ต้องเป็น migrator เท่านั้น: มี prisma/ + prisma7.config.ts + CMD migrate deploy
           push: true
           tags: ${{ steps.meta-migrate.outputs.tags }}
           cache-from: type=gha
