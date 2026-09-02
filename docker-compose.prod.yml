@@ -89,16 +89,25 @@ services:
       NODE_ENV: production
       # ต้องตรงกับ origin ที่เปิดใช้จริงเป๊ะ ๆ (รวม https) ไม่งั้น Better Auth
       # ตอบ INVALID_ORIGIN ตอน sign-in ทั้งที่แอปขึ้นปกติ
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?ยังไม่ได้ตั้ง BETTER_AUTH_URL ใน .env บน server (เช่น https://mobileorder.jayjayservices.com)}
+      # ใช้ default ไม่ใช่ :? เพราะ .env บน server มีแค่ 4 key (POSTGRES_* + BETTER_AUTH_SECRET)
+      # ค่านี้ไม่ใช่ความลับ จึงตั้ง default ได้ ต่างจากรหัสผ่าน/secret ที่ต้องบังคับด้วย :?
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://posqr.jayjayservices.com}
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?ยังไม่ได้ตั้ง BETTER_AUTH_SECRET — สร้างด้วย openssl rand -base64 32}"
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
     ports:
-      # ⚠️ ต้องผูกกับ 127.0.0.1 เสมอ ห้ามเขียน "3000:3000" เฉย ๆ
-      # Docker ทะลุ UFW ได้ — รูปแบบนั้นจะเปิดพอร์ต 3000 ออกอินเทอร์เน็ตทั้งที่ ufw deny
-      # ให้ nginx บนเครื่องต่อผ่าน loopback แทน (proxy_pass http://127.0.0.1:3000)
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      # ⚠️ ฝั่งขวาต้องเป็น 3000 เสมอ — Dockerfile stage runner ตั้ง ENV PORT=3000
+      # ของเดิมบน server เขียน "3001:3001" ซึ่ง map ไปพอร์ตที่ไม่มีอะไรฟังในคอนเทนเนอร์
+      # ผลคือ nginx ตอบ 502 ทั้งที่ docker ps ขึ้น (healthy) เพราะ HEALTHCHECK ของ image
+      # ยิง 127.0.0.1:3000 ข้างในคอนเทนเนอร์ซึ่งตอบปกติ
+      #
+      # ⚠️ ต้องผูกกับ 127.0.0.1 เสมอ ห้ามเขียน "3001:3000" เฉย ๆ
+      # Docker เขียน iptables เองจึงทะลุ UFW — รูปแบบนั้นจะเปิดพอร์ตออกเน็ตทั้งที่ ufw deny
+      #
+      # ฝั่งซ้ายเป็น 3001 เพื่อให้ตรงกับ nginx ที่ตั้งไว้แล้วบน server
+      # (/etc/nginx/sites-enabled/posmobileorder → proxy_pass http://127.0.0.1:3001)
+      - "127.0.0.1:${APP_PORT:-3001}:3000"
     # image มี HEALTHCHECK ในตัวแล้ว (ดู Dockerfile stage runner) จึงไม่ประกาศซ้ำที่นี่
     depends_on:
       db:
@@ -112,4 +121,11 @@ networks:
 
 volumes:
   postgres_data:
+    # ⚠️ ตั้ง name: ไว้ตรง ๆ จึงเป็นคนละลูกกับ volume เดิมบน server ที่ชื่อ
+    # posmobileorder_postgres_data (compose เติม prefix ให้เพราะไฟล์เก่าไม่ได้ตั้ง name:)
+    # ตั้งใจให้เป็นแบบนี้: volume เดิมเป็นข้อมูลของ postgres 16 ซึ่ง PG 18 บูตต่อไม่ได้
+    # การใช้ volume ใหม่ทำให้ PG 18 initdb สะอาด โดยไม่ต้องลบของเดิมทิ้ง
+    # (ของเดิมไม่มีตารางอยู่แล้ว — migration ไม่เคยรันผ่านบน PG 16 เพราะ
+    #  20260828093455_add-auth-models มี RENAME CONSTRAINT ... _not_null ที่ต้องใช้ PG 18)
+    # เก็บไว้ก่อนเผื่อตรวจย้อนหลัง จะลบทีหลังด้วย: docker volume rm posmobileorder_postgres_data
     name: postgres_data
