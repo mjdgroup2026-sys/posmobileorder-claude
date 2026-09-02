@@ -1074,10 +1074,10 @@ enum ResourceKey {
       · แนวทาง review 5 ข้อเรียงตามความสำคัญอยู่ท้าย `CONTRIBUTING.md`
 - [x] `Dockerfile` แบบ multi-stage build (ใช้ Next.js `output: 'standalone'`)
       — stage `runner` (แอป) + stage `migrator` (prisma CLI + schema + migrations + seed)
-- [ ] `docker-compose.yml` (บริการ app + postgres) + healthcheck
+- [x] `docker-compose.yml` (บริการ app + postgres) + healthcheck
       · `docker-compose.prod.yml` (stack บน VPS) ต้อง commit เข้า git ด้วย — CI scp ทับไฟล์บน server ทุกครั้งที่ deploy
-- [ ] CI ด้วย GitHub Actions: build + push image ไป `ghcr.io` (`:latest` + `:sha-xxxx` และ `:latest-migrate`)
-- [ ] ตรวจสอบ: `docker compose up` รันแอป + DB ได้ครบ, CI ผ่านและ push image สำเร็จ
+- [x] CI ด้วย GitHub Actions: build + push image ไป `ghcr.io` (`:latest` + `:sha-xxxx` และ `:latest-migrate`)
+- [x] ตรวจสอบ: `docker compose up` รันแอป + DB ได้ครบ, CI ผ่านและ push image สำเร็จ
 
 ### ⏭️ Phase 5 — Production (วันที่ 5)
 นำขึ้น production พร้อมความปลอดภัยและการดูแล
@@ -1094,9 +1094,9 @@ enum ResourceKey {
       > ⚠️ Docker เขียน iptables เองจึง **ทะลุกฎ UFW** ได้: พอร์ตที่ `ports:` ประกาศไว้จะเปิดออกเน็ต
       > แม้ UFW จะ deny — ต้องผูกเป็น `127.0.0.1:3000:3000` ใน `docker-compose.prod.yml` เสมอ
       > (ให้ nginx ต่อผ่าน loopback)
-- [ ] Nginx reverse proxy ไปยัง app container (`/etc/nginx/sites-enabled/pos_shop` → `127.0.0.1:3000`,
+- [x] Nginx reverse proxy ไปยัง app container (`/etc/nginx/sites-enabled/posmobileorder` → `127.0.0.1:3001`,
       gzip + cache `/_next/static` 1 ปี)
-- [ ] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `posqr.jayjayservices.com` ออกโดย Let's Encrypt,
+- [x] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `posqr.jayjayservices.com` ออกโดย Let's Encrypt,
       `/etc/cron.d/certbot` ต่ออายุอัตโนมัติ, HTTP → HTTPS 301)
 - [ ] CD อัตโนมัติ: pull image ใหม่ + **zero-downtime restart** — ปลดเงื่อนไข `vars.DEPLOY_ENABLED`
       ลำดับใน job `deploy`: tag image เดิมเป็น `:previous` → pull → **migrate ก่อน** →
@@ -1144,7 +1144,7 @@ enum ResourceKey {
 - [ ] ตรวจสอบ: เข้าผ่าน HTTPS ได้, deploy ใหม่ไม่มี downtime, กู้คืนจาก backup ได้,
       สมัครสมาชิกแล้วได้รับอีเมลยืนยันจริงและยืนยันสำเร็จ,
       ขอลิงก์ลืมรหัสผ่านแล้วได้รับอีเมลจริงและตั้งรหัสผ่านใหม่สำเร็จ
-      - [ ] เข้าผ่าน HTTPS ได้ (HTTP → HTTPS 301, cert Let's Encrypt ต่ออายุอัตโนมัติ)
+      - [x] เข้าผ่าน HTTPS ได้ (HTTP → HTTPS 301, cert Let's Encrypt ต่ออายุอัตโนมัติ)
       - [ ] กู้คืนจาก backup ได้ — ซ้อมด้วย `restore-db.sh --drill` ต้องกู้ครบทุกตารางโดยไม่แตะฐานจริง
       - [ ] สมัครสมาชิกแล้วได้รับอีเมลยืนยันจริงและยืนยันสำเร็จ (`emailVerified = true` ใน production)
             > ⚠️ กับดัก: ถ้าโดเมนผู้ส่งยังไม่มีเรคคอร์ดของตัวเองใน DNS (query แล้วได้ NXDOMAIN) อีเมล

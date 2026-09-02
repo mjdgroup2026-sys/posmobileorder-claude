@@ -253,11 +253,19 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
   seed ไว้ 7 รายการ SKU-1001…SKU-1007
 
-**ยังไม่ได้ทำ**: Phase 2.5 (POS Module) · Phase 3–5 (Agentic Quality / Container / Production) ·
-Phase 6–12 (MJD Mobile Order) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
+**ยังไม่ได้ทำ**: Phase 2.5 (POS Module) · Phase 6–12 (MJD Mobile Order) ·
+Phase 3–5 ทำไปบางส่วน (ดูด้านล่าง) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
-เป้าหมายตอนขึ้น production: https://posqr.jayjayservices.com (CI/CD อัตโนมัติจาก `main`,
-backup รายวัน + alert ผ่าน `ops/`) — **ยังไม่ได้ deploy**
+**✅ deploy ขึ้น production แล้ว (2026-09-02): https://posqr.jayjayservices.com**
+CI/CD อัตโนมัติจาก `main` ทำงานจริง — push → test → build+push image ไป `ghcr.io` → scp compose +
+`up -d` + `migrate deploy` บน VPS `138.252.93.119` (user `deploy`) · nginx + HTTPS (Let's Encrypt,
+ต่ออายุอัตโนมัติ) · PostgreSQL 18 ในคอนเทนเนอร์ `posmobileorder-db` · `/api/health` ตอบ 200
+
+**ยังเหลือใน Phase 5**: SSH hardening + UFW (`ops/setup-vps.sh` ยังไม่เคยรันบน VPS — password login
+ยังเปิดอยู่) · backup + rollback + health alert (`ops/` มีแค่ `setup-vps.sh`) · zero-downtime blue/green ·
+ต่อ Resend จริง (DNS พร้อมแล้ว แต่ `.env` บน server ยังไม่มี `RESEND_API_KEY`/`MAIL_FROM`) ·
+เปิดยืนยันอีเมลตอนสมัคร (`requireEmailVerification` ยังเป็น `false`)
+**ยังเหลือใน Phase 3–4**: post-edit hook + `.claude/settings.json` · `CONTRIBUTING.md` · PR template
 
 **ระบบสิทธิ์ตามบทบาท (Role-Based Permission) อยู่นอกขอบเขต v1** — เดิมคือ Phase 2.6 ปัจจุบันยกไปเป็น
 "Phase ถัดไป (ยังไม่กำหนดวัน)" ท้าย §8 ของ spec ห้ามเริ่มทำจนกว่า Phase 1–5 จะปิดครบและมีการอนุมัติขอบเขตใหม่
