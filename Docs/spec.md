@@ -1110,7 +1110,7 @@ enum ResourceKey {
       > ⚠️ กับดัก: ช่วง `docker pull` image ใหม่ (~300MB บนเครื่อง 2 vCPU) แอปอาจตอบช้าจน
       > timeout ได้ราว 40 วินาที **ก่อน** ถึงขั้นสลับสี — ลดผลกระทบด้วยการตั้ง
       > `max-concurrent-downloads` ใน `/etc/docker/daemon.json` (ต้องใช้ sudo)
-- [ ] Backup strategy: dump PostgreSQL ตามรอบ — `ops/backup-db.sh` + cron ทุกวัน 03:17
+- [x] Backup strategy: dump PostgreSQL ตามรอบ — `ops/backup-db.sh` + cron ทุกวัน 03:17
       (`pg_dump -Fc` → ตรวจไฟล์ด้วย `pg_restore --list` → เก็บย้อนหลัง 14 วัน → ล้มเหลวเมื่อไหร่ส่งอีเมลเตือน)
       · ซ้อมกู้คืนด้วย `ops/restore-db.sh --drill` — ต้องกู้ได้ครบทุกตารางโดยไม่แตะฐานจริง
       · **สำเนาที่สองนอก VPS**: `ops/pull-backup.ps1` + Windows Task Scheduler (`MJD-PullBackup`)
@@ -1145,7 +1145,7 @@ enum ResourceKey {
       สมัครสมาชิกแล้วได้รับอีเมลยืนยันจริงและยืนยันสำเร็จ,
       ขอลิงก์ลืมรหัสผ่านแล้วได้รับอีเมลจริงและตั้งรหัสผ่านใหม่สำเร็จ
       - [x] เข้าผ่าน HTTPS ได้ (HTTP → HTTPS 301, cert Let's Encrypt ต่ออายุอัตโนมัติ)
-      - [ ] กู้คืนจาก backup ได้ — ซ้อมด้วย `restore-db.sh --drill` ต้องกู้ครบทุกตารางโดยไม่แตะฐานจริง
+      - [x] กู้คืนจาก backup ได้ — ซ้อมด้วย `restore-db.sh --drill` ต้องกู้ครบทุกตารางโดยไม่แตะฐานจริง
       - [ ] สมัครสมาชิกแล้วได้รับอีเมลยืนยันจริงและยืนยันสำเร็จ (`emailVerified = true` ใน production)
             > ⚠️ กับดัก: ถ้าโดเมนผู้ส่งยังไม่มีเรคคอร์ดของตัวเองใน DNS (query แล้วได้ NXDOMAIN) อีเมล
             > จะเข้า junk — ต้องเพิ่ม TXT `v=spf1 include:amazonses.com -all` ที่ host ของโดเมนผู้ส่ง
@@ -1153,7 +1153,7 @@ enum ResourceKey {
       - [ ] เส้นทางอีเมลลืมรหัสผ่าน — `request-password-reset` ต้องตอบ 200 และ Resend รับงานโดยไม่มี error
       - [ ] deploy ใหม่ไม่มี downtime — blue/green + `nginx -s reload` แบบ graceful
             (วัดระหว่างสลับสี: ทุกคำขอต้องผ่าน ล้ม 0 ครั้ง)
-      - [ ] backup เก็บนอกเครื่อง — ดึงลงเครื่อง Windows ทุกวัน 20:00 (ข้อจำกัด: เฉพาะตอนเปิดเครื่อง)
+      - [x] backup เก็บนอกเครื่อง — ดึงลงเครื่อง Windows ทุกวัน 20:00 (ข้อจำกัด: เฉพาะตอนเปิดเครื่อง)
       - [ ] ทดสอบระบบเต็มรูปแบบบน production: หน้าสาธารณะต้องตอบ 200 ·
             หน้าในระบบต้องเด้งไป `/login?callbackUrl=…` เมื่อยังไม่ล็อกอิน ·
             ล็อกอินแล้วต้องเข้าได้ครบทุกหน้า (dashboard, pos, pos/history, pos/closing, products,

@@ -81,7 +81,9 @@ services:
       - pos-network
 
   app:
-    image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:latest
+    # APP_TAG ทำให้ ops/rollback.sh ย้อนเวอร์ชันได้โดยไม่ต้องแก้ไฟล์นี้
+    # ปกติไม่มีค่านี้ใน .env จึงใช้ latest — rollback.sh จะเขียน APP_TAG=<tag> ลง .env เอง
+    image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:${APP_TAG:-latest}
     container_name: posmobileorder-app
     restart: unless-stopped
     environment:

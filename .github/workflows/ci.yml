@@ -142,15 +142,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # copy compose file จาก repo ขึ้น server ทุกครั้งก่อน deploy → ไฟล์บน server = ไฟล์ใน git เสมอ
+      # copy compose file + สคริปต์ ops/ จาก repo ขึ้น server ทุกครั้งก่อน deploy
+      # → ไฟล์บน server = ไฟล์ใน git เสมอ ห้ามแก้ด้วยมือบน server เพราะจะถูกทับ
       # (.env ไม่ copy — เป็น secret ที่จัดการบน server เอง)
-      - name: Copy compose file to VPS
+      - name: Copy compose file and ops scripts to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          source: "docker-compose.prod.yml"
+          source: "docker-compose.prod.yml,ops/*.sh"
           target: "/home/deploy/posmobileorder"
 
       - name: Deploy to VPS via SSH
@@ -162,7 +163,14 @@ jobs:
           script: |
             set -e
             cd /home/deploy/posmobileorder
+            # scp ไม่รับประกันว่าบิต execute ติดมาด้วย — ตั้งเองทุกรอบ
+            chmod +x ops/*.sh || true
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+            # เก็บ image ที่กำลังรันไว้เป็น :previous ก่อนดึงตัวใหม่ทับ
+            # ตั้ง tag ในเครื่องอย่างเดียว ไม่ push ขึ้น registry — ops/rollback.sh
+            # จึงย้อนกลับได้แม้ ghcr.io ล่ม (rollback.sh ใช้ image ในเครื่องก่อนเสมอ)
+            docker tag ghcr.io/mjdgroup2026-sys/posmobileorder-claude:latest \
+                       ghcr.io/mjdgroup2026-sys/posmobileorder-claude:previous 2>/dev/null || true
             docker compose -f docker-compose.prod.yml --profile tools pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
