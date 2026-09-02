@@ -1044,7 +1044,7 @@ enum ResourceKey {
 > ℹ️ **Phase 2.6 (Role-Based Permission) ถูกยกออกจากไทม์ไลน์ v1 แล้ว** — checklist เดิมย้ายไปอยู่ท้ายหัวข้อนี้
 > ใต้ Phase 5 ในชื่อ "Phase ถัดไป (ยังไม่กำหนดวัน)" · เหตุผลดูที่ [§7 Out of Scope](#7-out-of-scope-v1)
 
-### ⏭️ Phase 3 — Agentic Quality (วันที่ 3)
+### ✅ Phase 3 — Agentic Quality (วันที่ 3)
 ยกระดับคุณภาพด้วย agent, MCP และ automation
 
 - [x] Sub-agent: `code-reviewer` (รีวิวโค้ดตาม convention โปรเจกต์)
@@ -1055,21 +1055,21 @@ enum ResourceKey {
       > ⚠️ กับดัก: connection string ใน `.mcp.json` ต้องตรงกับ `DATABASE_URL` ใน `.env` เป๊ะ ๆ
       > (host/port/user/ชื่อฐาน) ถ้าชี้ไปฐานที่ไม่มีอยู่จริง MCP จะต่อไม่ติดแบบเงียบ ๆ ·
       > GitHub MCP ให้อ่าน token จาก `${GITHUB_TOKEN}` **ห้ามเก็บ token ไว้ในไฟล์**
-- [ ] Hooks: lint / format อัตโนมัติหลังแก้ไขโค้ด (post-edit hook)
+- [x] Hooks: lint / format อัตโนมัติหลังแก้ไขโค้ด (post-edit hook)
       — `.claude/settings.json` (commit เข้า git ให้ทีมใช้ร่วมกัน) เรียก `.claude/hooks/post-edit.mjs`
       ทุกครั้งที่ `Edit`/`Write` ไฟล์ `.ts`/`.tsx`: รัน `eslint --fix` เฉพาะไฟล์นั้น แล้วเตือนถ้าเจอ
       semicolon ปิดท้ายบรรทัด (กติกาข้อ 1) · เขียนเป็น Node ไม่ใช่ shell เพราะเครื่อง Windows ของทีมไม่มี `jq`
-- [ ] ตรวจสอบ: แก้โค้ดแล้ว hook รัน lint อัตโนมัติ, เรียก sub-agent ทำงานได้
+- [x] ตรวจสอบ: แก้โค้ดแล้ว hook รัน lint อัตโนมัติ, เรียก sub-agent ทำงานได้
       — ทดสอบ hook ด้วยการป้อน payload จริงเข้า stdin: ไฟล์สะอาดต้องเงียบ, ไฟล์ที่มี semicolon ต้องรายงานเลขบรรทัดถูกต้อง
       > ⚠️ MCP ต่อฐานจริงได้ต่อเมื่อเปิด Docker Desktop (พอร์ต 5435) และเปิด Claude Code ใหม่ · ตรวจด้วย `/mcp`
 
-### ⏭️ Phase 4 — Team & Containerization (วันที่ 4)
+### ✅ Phase 4 — Team & Containerization (วันที่ 4)
 ทำงานเป็นทีมและแพ็กเป็น container
 
-- [ ] แชร์ `.claude/` config ผ่าน Git ให้ทีมใช้ร่วมกัน (agents, commands, hooks, settings)
-- [ ] Git workflow: commit message convention (Conventional Commits) — [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+- [x] แชร์ `.claude/` config ผ่าน Git ให้ทีมใช้ร่วมกัน (agents, commands, hooks, settings)
+- [x] Git workflow: commit message convention (Conventional Commits) — [`CONTRIBUTING.md`](../CONTRIBUTING.md)
       (ตาราง type/scope, กติกาตั้งชื่อ branch, checklist ก่อนเปิด PR, สิ่งที่เกิดขึ้นหลัง merge เข้า `main`)
-- [ ] PR template + แนวทาง code review — [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
+- [x] PR template + แนวทาง code review — [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
       มี checklist แยกตามสิ่งที่แตะ (สต็อก/เงิน · Server Action · schema) และหัวข้อ "ผลกระทบตอน deploy"
       · แนวทาง review 5 ข้อเรียงตามความสำคัญอยู่ท้าย `CONTRIBUTING.md`
 - [x] `Dockerfile` แบบ multi-stage build (ใช้ Next.js `output: 'standalone'`)
