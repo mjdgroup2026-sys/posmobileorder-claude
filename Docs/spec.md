@@ -1096,7 +1096,7 @@ enum ResourceKey {
       > (ให้ nginx ต่อผ่าน loopback)
 - [ ] Nginx reverse proxy ไปยัง app container (`/etc/nginx/sites-enabled/pos_shop` → `127.0.0.1:3000`,
       gzip + cache `/_next/static` 1 ปี)
-- [ ] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `mobileorder.jayjayservices.com` ออกโดย Let's Encrypt,
+- [ ] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `posqr.jayjayservices.com` ออกโดย Let's Encrypt,
       `/etc/cron.d/certbot` ต่ออายุอัตโนมัติ, HTTP → HTTPS 301)
 - [ ] CD อัตโนมัติ: pull image ใหม่ + **zero-downtime restart** — ปลดเงื่อนไข `vars.DEPLOY_ENABLED`
       ลำดับใน job `deploy`: tag image เดิมเป็น `:previous` → pull → **migrate ก่อน** →

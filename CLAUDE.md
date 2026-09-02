@@ -256,7 +256,7 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 **ยังไม่ได้ทำ**: Phase 2.5 (POS Module) · Phase 3–5 (Agentic Quality / Container / Production) ·
 Phase 6–12 (MJD Mobile Order) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
-เป้าหมายตอนขึ้น production: https://mobileorder.jayjayservices.com (CI/CD อัตโนมัติจาก `main`,
+เป้าหมายตอนขึ้น production: https://posqr.jayjayservices.com (CI/CD อัตโนมัติจาก `main`,
 backup รายวัน + alert ผ่าน `ops/`) — **ยังไม่ได้ deploy**
 
 **ระบบสิทธิ์ตามบทบาท (Role-Based Permission) อยู่นอกขอบเขต v1** — เดิมคือ Phase 2.6 ปัจจุบันยกไปเป็น
