@@ -1,0 +1,22 @@
+# บังคับ line ending ให้ไฟล์ที่ "ต้องเป็น LF เท่านั้น" ตอน checkout
+#
+# เครื่องของทีมเป็น Windows ซึ่ง core.autocrlf=true จะแปลงเป็น CRLF ตอน checkout
+# ไฟล์ shell script ที่มี CRLF จะพังทันทีเมื่อรันบน Ubuntu ด้วยข้อความกำกวมมาก
+# ("$'\r': command not found" หรือ "no such file or directory" ทั้งที่ไฟล์อยู่ครบ)
+#
+# ครอบทั้ง ops/*.sh (รันบน VPS) และ Dockerfile/entrypoint (รันในคอนเทนเนอร์)
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# PowerShell ต้องเป็น CRLF + ต้องมี BOM (ดูหมายเหตุใน ops/pull-backup.ps1)
+# PowerShell 5.1 อ่านไฟล์ที่ไม่มี BOM เป็น ANSI แล้วข้อความไทยเพี้ยนจนไวยากรณ์พัง
+*.ps1       text eol=crlf working-tree-encoding=UTF-8
+
+# ไฟล์ไบนารี — ห้ามแปลงอะไรทั้งสิ้น
+*.dump      binary
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.woff2     binary
