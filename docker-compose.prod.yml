@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MJD Mobile Order (posmobileorder) — stack บน VPS production
+#
+# ไฟล์นี้ถูก CI (job `deploy` ใน .github/workflows/ci.yml) scp ทับลง
+# /home/deploy/posmobileorder/ ทุกครั้งที่ deploy → ไฟล์บน server = ไฟล์ใน git เสมอ
+# ห้ามแก้ด้วยมือบนเครื่อง server เพราะจะถูกทับหายในรอบถัดไป
+#
+# ต่างจาก docker-compose.yml (dev) ตรงนี้:
+#   1. ไม่มี build: — ดึง image สำเร็จรูปจาก ghcr.io ที่ CI build ไว้แล้ว
+#   2. migrate อยู่ใต้ profile "tools" — CI สั่งรันเองเป็นขั้นแยก ไม่ใช่ depends_on
+#   3. พอร์ตผูกกับ 127.0.0.1 เท่านั้น และ db ไม่ map ออก host เลย
+#   4. migrate ไม่ seed — ใช้ CMD ของ image (prisma migrate deploy) ตามเดิม
+#
+# ⚠️ .env ไม่ถูก copy ขึ้นมาโดย CI (เป็นความลับ จัดการบน server เอง)
+#    compose auto-load /home/deploy/posmobileorder/.env ให้เองเพราะอยู่โฟลเดอร์เดียวกัน
+#    ถ้าไฟล์นั้นหาย จะล้มทันทีที่ POSTGRES_PASSWORD / BETTER_AUTH_SECRET (ใช้ :? ไม่ใช่ :-)
+#    ซึ่งเป็นพฤติกรรมที่ต้องการ — ดีกว่าขึ้น production ด้วยรหัสผ่าน default
+# ─────────────────────────────────────────────────────────────────────────────
+name: posmobileorder
+
+# DATABASE_URL ชี้เข้า service "db" ผ่าน network ภายใน (5432) ไม่ใช่พอร์ตฝั่ง host
+# ⚠️ POSTGRES_PASSWORD ห้ามมี / : @ # ? — ค่านี้ถูกเสียบลง URL ตรง ๆ ถ้ามีอักขระพวกนี้
+#    @prisma/adapter-pg จะฟ้อง "Invalid URL" แล้วแอปต่อฐานไม่ได้ทั้งระบบ (health 503)
+#    สร้างด้วย: openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+x-database-url: &db-url
+  DATABASE_URL: "postgresql://${POSTGRES_USER:-posmobileorderuser}:${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD ใน .env บน server}@db:5432/${POSTGRES_DB:-posmobileorderdb}?schema=public"
+
+services:
+  db:
+    # ⚠️ ต้องเป็น 18 เท่านั้น ห้ามลดเป็น 16 — migration 20260828093455_add-auth-models
+    # มี ALTER TABLE ... RENAME CONSTRAINT "Product_id_not_null" ซึ่ง PostgreSQL เพิ่งเก็บ
+    # NOT NULL constraint ลง pg_constraint ตอน 18 · บน 16 จะล้มด้วย 42704
+    image: postgres:18-alpine
+    container_name: posmobileorder-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-posmobileorderuser}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD ใน .env บน server}"
+      POSTGRES_DB: ${POSTGRES_DB:-posmobileorderdb}
+      # กัน locale เพี้ยนตอน initdb — ชื่อสินค้าเป็นภาษาไทย
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      # PG 18+ เก็บข้อมูลใน subdirectory ตามเลข major (/var/lib/postgresql/18/docker)
+      # ต้อง mount ที่ /var/lib/postgresql เท่านั้น — ถ้าใช้ .../data แบบ PG 16
+      # คอนเทนเนอร์จะตายตั้งแต่บูตพร้อมข้อความ "unused mount/volume"
+      - postgres_data:/var/lib/postgresql
+    # ⚠️ ไม่มี ports: โดยตั้งใจ — ฐานข้อมูลต้องเข้าถึงได้จาก network ภายในเท่านั้น
+    # Docker เขียน iptables เองจึงทะลุกฎ UFW ได้: ถ้าประกาศ "5432:5432" ฐานจะเปิดออก
+    # อินเทอร์เน็ตทั้งที่ ufw deny อยู่ (ดู ops/setup-vps.sh ขั้นตอนที่ 4)
+    # ต้องเข้าฐานเพื่อ debug ให้ใช้: docker exec -it posmobileorder-db psql -U posmobileorderuser -d posmobileorderdb
+    healthcheck:
+      # ต้องระบุ -d ด้วย ไม่งั้น pg_isready ตอบ ready ตั้งแต่ initdb ยังสร้างฐานไม่เสร็จ
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-posmobileorderuser} -d ${POSTGRES_DB:-posmobileorderdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - pos-network
+
+  migrate:
+    # ⚠️ image นี้ต้อง build จาก stage `migrator` เท่านั้น (ci.yml job build-and-push)
+    # stage deps ไม่มี prisma/ กับ prisma7.config.ts จะฟ้อง "Could not find Prisma Schema"
+    # แล้ว deploy "สำเร็จ" ทั้งที่ DB ไม่มีตาราง
+    image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:latest-migrate
+    container_name: posmobileorder-migrate
+    # อยู่ใต้ profile "tools" — `docker compose up -d` เฉย ๆ จะไม่สตาร์ตตัวนี้
+    # CI เรียกเองเป็นขั้นแยก: docker compose --profile tools run --rm migrate
+    profiles:
+      - tools
+    restart: "no"
+    environment:
+      <<: *db-url
+    # ไม่ override command โดยตั้งใจ — ใช้ CMD ของ image คือ `prisma migrate deploy` ล้วน
+    # ⚠️ ห้ามเติม `prisma db seed` แบบ compose ของ dev เด็ดขาด: seed จะเขียนข้อมูลตัวอย่าง
+    # ทับฐาน production ทุกครั้งที่ deploy
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pos-network
+
+  app:
+    image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:latest
+    container_name: posmobileorder-app
+    restart: unless-stopped
+    environment:
+      <<: *db-url
+      NODE_ENV: production
+      # ต้องตรงกับ origin ที่เปิดใช้จริงเป๊ะ ๆ (รวม https) ไม่งั้น Better Auth
+      # ตอบ INVALID_ORIGIN ตอน sign-in ทั้งที่แอปขึ้นปกติ
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?ยังไม่ได้ตั้ง BETTER_AUTH_URL ใน .env บน server (เช่น https://mobileorder.jayjayservices.com)}
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?ยังไม่ได้ตั้ง BETTER_AUTH_SECRET — สร้างด้วย openssl rand -base64 32}"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+    ports:
+      # ⚠️ ต้องผูกกับ 127.0.0.1 เสมอ ห้ามเขียน "3000:3000" เฉย ๆ
+      # Docker ทะลุ UFW ได้ — รูปแบบนั้นจะเปิดพอร์ต 3000 ออกอินเทอร์เน็ตทั้งที่ ufw deny
+      # ให้ nginx บนเครื่องต่อผ่าน loopback แทน (proxy_pass http://127.0.0.1:3000)
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    # image มี HEALTHCHECK ในตัวแล้ว (ดู Dockerfile stage runner) จึงไม่ประกาศซ้ำที่นี่
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - pos-network
+
+networks:
+  pos-network:
+    name: pos-network
+
+volumes:
+  postgres_data:
+    name: postgres_data
