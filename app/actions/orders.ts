@@ -1,0 +1,277 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { prisma } from "@/lib/prisma"
+import { requireUser } from "@/lib/session"
+import { idSchema, cancelOrderItemSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
+import type { OrderItemStatus } from "@/generated/prisma/client"
+import { isPrinterConfigured, printKitchenTicket } from "@/lib/kitchen-printer"
+import type { ActionResult } from "@/lib/types"
+
+const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
+
+/// ดึงชื่อ modifier ออกจาก JSON snapshot สำหรับพิมพ์ทิกเก็ต
+function parseOptionNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((entry) =>
+    typeof entry === "object" && entry !== null && typeof (entry as { optionName?: unknown }).optionName === "string"
+      ? [(entry as { optionName: string }).optionName]
+      : [],
+  )
+}
+
+const STATUS_LABEL: Record<OrderItemStatus, string> = {
+  AWAITING_KITCHEN: "รอครัวรับ",
+  COOKING: "กำลังปรุง",
+  READY: "พร้อมเสิร์ฟ",
+  SERVED: "เสิร์ฟแล้ว",
+  CANCELLED: "ยกเลิกแล้ว",
+}
+
+function revalidateOrderPages() {
+  revalidatePath("/mobile-order/tables")
+  revalidatePath("/mobile-order/kitchen")
+  revalidatePath("/mobile-order/notifications")
+}
+
+async function hasKDS(): Promise<boolean> {
+  const settings = await prisma.storeSettings.findUnique({
+    where: { id: "default" },
+    select: { hasKDS: true },
+  })
+  return settings?.hasKDS ?? false
+}
+
+/// เปลี่ยนสถานะรายการอาหารแบบ conditional update (กติกาข้อ 7)
+///
+/// ★ ทุกการเปลี่ยนสถานะต้องระบุสถานะต้นทางใน `where` เสมอ ห้าม read-then-write —
+///   ป้องกัน race ระหว่างครัวกด "เริ่มทำ" กับพนักงานกด "ยกเลิกรายการ" พร้อมกัน
+async function transition(
+  itemId: string,
+  from: OrderItemStatus[],
+  to: OrderItemStatus,
+  extra: Record<string, unknown> = {},
+): Promise<ActionResult> {
+  const item = await prisma.mobileOrderItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, status: true, menuItem: { select: { name: true } } },
+  })
+  if (!item) return { ok: false, error: "ไม่พบรายการอาหารนี้" }
+
+  const updated = await prisma.mobileOrderItem.updateMany({
+    where: { id: itemId, status: { in: from } },
+    data: { status: to, ...extra },
+  })
+
+  if (updated.count === 0) {
+    const current = await prisma.mobileOrderItem.findUnique({
+      where: { id: itemId },
+      select: { status: true },
+    })
+    return {
+      ok: false,
+      error: `เปลี่ยนสถานะ ${item.menuItem.name} ไม่ได้ — ตอนนี้เป็น "${STATUS_LABEL[current?.status ?? "CANCELLED"]}" แล้ว`,
+    }
+  }
+
+  revalidateOrderPages()
+  return { ok: true, message: `${item.menuItem.name} — ${STATUS_LABEL[to]}` }
+}
+
+/// ครัวกด "เริ่มปรุง" บน KDS
+export async function startCookingItem(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  if (!(await hasKDS())) {
+    return { ok: false, error: "ร้านนี้ปิดการใช้งาน KDS อยู่ — ให้พนักงานกด “เสิร์ฟอาหารแล้ว” ที่หน้าโต๊ะแทน" }
+  }
+
+  return transition(parsed.data.id, ["AWAITING_KITCHEN"], "COOKING")
+}
+
+/// ครัวกด "ทำเสร็จแล้ว" บน KDS
+export async function markItemReady(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  return transition(parsed.data.id, ["COOKING"], "READY")
+}
+
+/// "เสิร์ฟอาหารแล้ว" — ร้านที่มี KDS กดจาก READY, ร้านที่ไม่มี KDS ข้ามจาก AWAITING_KITCHEN ตรงมา SERVED
+export async function markItemServed(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  const from: OrderItemStatus[] = (await hasKDS())
+    ? ["READY"]
+    : ["AWAITING_KITCHEN", "COOKING", "READY"]
+
+  return transition(parsed.data.id, from, "SERVED")
+}
+
+/// ยกเลิกรายการอาหารทีละรายการ — อนุญาตเฉพาะตอนยังเป็น AWAITING_KITCHEN เท่านั้น (กติกาข้อ 7)
+export async function cancelOrderItem(formData: FormData): Promise<ActionResult> {
+  let user
+  try {
+    user = await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = cancelOrderItemSchema.safeParse({
+    id: formData.get("id") ?? "",
+    reason: formData.get("reason") ?? "",
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  return transition(parsed.data.id, ["AWAITING_KITCHEN"], "CANCELLED", {
+    cancelledAt: new Date(),
+    cancelledById: user.id,
+    cancelReason: parsed.data.reason,
+  })
+}
+
+/// เปลี่ยนสถานะทั้งทิกเก็ตในครั้งเดียว (ปุ่มบน KDS เป็นระดับใบสั่ง ไม่ใช่รายรายการ)
+/// ยังเป็น conditional update เหมือนเดิม — รายการที่สถานะเปลี่ยนไปแล้วจะไม่ถูกแตะ
+async function transitionOrder(
+  orderId: string,
+  from: OrderItemStatus[],
+  to: OrderItemStatus,
+): Promise<ActionResult> {
+  const updated = await prisma.mobileOrderItem.updateMany({
+    where: { mobileOrderId: orderId, status: { in: from } },
+    data: { status: to },
+  })
+
+  if (updated.count === 0) {
+    return { ok: false, error: "รายการในทิกเก็ตนี้ถูกเปลี่ยนสถานะไปแล้ว" }
+  }
+
+  revalidateOrderPages()
+  return { ok: true, message: `อัปเดต ${updated.count} รายการเป็น "${STATUS_LABEL[to]}" แล้ว` }
+}
+
+export async function startCookingOrder(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  if (!(await hasKDS())) {
+    return { ok: false, error: "ร้านนี้ปิดการใช้งาน KDS อยู่ — ให้พนักงานกด “เสิร์ฟอาหารแล้ว” ที่หน้าโต๊ะแทน" }
+  }
+
+  return transitionOrder(parsed.data.id, ["AWAITING_KITCHEN"], "COOKING")
+}
+
+export async function markOrderReady(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  return transitionOrder(parsed.data.id, ["COOKING"], "READY")
+}
+
+export async function markOrderServed(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  const from: OrderItemStatus[] = (await hasKDS())
+    ? ["READY"]
+    : ["AWAITING_KITCHEN", "COOKING", "READY"]
+
+  return transitionOrder(parsed.data.id, from, "SERVED")
+}
+
+/// พิมพ์ทิกเก็ตครัวซ้ำ — ใช้ตอนกระดาษหมด/เครื่องพิมพ์หลุด แล้วทิกเก็ตรอบแรกไม่ออก
+/// การพิมพ์อยู่นอกทรานแซคชันโดยตั้งใจ: พิมพ์ไม่ผ่านต้องไม่ทำให้ข้อมูลออร์เดอร์เสียหาย
+export async function reprintKitchenTicket(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  const order = await prisma.mobileOrder.findUnique({
+    where: { id: parsed.data.id },
+    include: {
+      session: { select: { table: { select: { code: true } } } },
+      items: {
+        where: { status: { not: "CANCELLED" } },
+        include: { menuItem: { select: { name: true } } },
+      },
+    },
+  })
+  if (!order) return { ok: false, error: "ไม่พบออร์เดอร์นี้" }
+
+  if (!isPrinterConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าเครื่องพิมพ์ครัว (KITCHEN_PRINTER_HOST) จึงพิมพ์ไม่ได้" }
+  }
+
+  const printed = await printKitchenTicket({
+    tableCode: order.session.table.code,
+    orderNumber: order.orderNumber,
+    submittedAt: order.submittedAt,
+    items: order.items.map((item) => ({
+      quantity: item.quantity,
+      name: item.menuItem.name,
+      options: parseOptionNames(item.selectedOptionsSnapshot),
+      note: item.note,
+    })),
+  })
+
+  if (!printed) {
+    return { ok: false, error: "ส่งงานพิมพ์ไม่สำเร็จ — ตรวจว่าเครื่องพิมพ์เปิดอยู่และอยู่ในเครือข่ายเดียวกัน" }
+  }
+
+  await prisma.mobileOrder.update({
+    where: { id: order.id },
+    data: { printedAt: new Date() },
+  })
+
+  revalidateOrderPages()
+  return { ok: true, message: `พิมพ์ทิกเก็ตออร์เดอร์ที่ ${order.orderNumber} ซ้ำเรียบร้อยแล้ว` }
+}

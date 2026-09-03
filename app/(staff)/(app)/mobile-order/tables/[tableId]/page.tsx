@@ -1,0 +1,26 @@
+import Link from "next/link"
+import { getTableDetail } from "@/lib/queries"
+import { TableDetail } from "@/components/table-detail"
+
+export const metadata = { title: "รายละเอียดออร์เดอร์" }
+
+export default async function TableDetailPage({ params }: PageProps<"/mobile-order/tables/[tableId]">) {
+  const { tableId } = await params
+  const detail = await getTableDetail(tableId)
+
+  if (!detail) {
+    return (
+      <section className="card-ui card-pad">
+        <h1 className="t-h2">ไม่พบโต๊ะที่เปิดอยู่</h1>
+        <p className="t-body" style={{ marginTop: 8 }}>
+          โต๊ะนี้อาจถูกปิดบิลหรือยกเลิกไปแล้ว
+        </p>
+        <Link href="/mobile-order/tables" className="btn btn-primary" style={{ marginTop: 16 }}>
+          กลับไปผังโต๊ะ
+        </Link>
+      </section>
+    )
+  }
+
+  return <TableDetail detail={detail} />
+}

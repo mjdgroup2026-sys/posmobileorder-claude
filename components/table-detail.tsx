@@ -1,0 +1,339 @@
+"use client"
+
+import { useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { cancelOrderItem, markItemServed, reprintKitchenTicket } from "@/app/actions/orders"
+import { cancelTableSession } from "@/app/actions/tables"
+import { acknowledgeNotification } from "@/app/actions/notifications"
+import { formatBaht, formatClock, formatDateTime, formatNumber } from "@/lib/format"
+import type { OrderItemRow, TableDetail as TableDetailData } from "@/lib/queries"
+import { LiveElapsed } from "@/components/live-elapsed"
+import { AutoRefresh } from "@/components/auto-refresh"
+import { IconBack, IconSpinner } from "@/components/icons"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+const ITEM_STATUS: Record<OrderItemRow["status"], { label: string; chip: string }> = {
+  AWAITING_KITCHEN: { label: "รอครัวรับ", chip: "chip-danger" },
+  COOKING: { label: "กำลังปรุง", chip: "chip-warning" },
+  READY: { label: "พร้อมเสิร์ฟ", chip: "chip-success" },
+  SERVED: { label: "เสิร์ฟแล้ว", chip: "chip-neutral" },
+  CANCELLED: { label: "ยกเลิกแล้ว", chip: "chip-neutral" },
+}
+
+export function TableDetail({ detail }: { detail: TableDetailData }) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [cancellingItem, setCancellingItem] = useState<OrderItemRow | null>(null)
+  const [itemReason, setItemReason] = useState("")
+  const [cancellingTable, setCancellingTable] = useState(false)
+  const [tableReason, setTableReason] = useState("")
+
+  async function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
+    setPending(true)
+    try {
+      const result = await action()
+      if (!result.ok) {
+        toast.error(result.error ?? "ทำรายการไม่สำเร็จ")
+        router.refresh()
+        return false
+      }
+      toast.success(result.message ?? "ทำรายการเรียบร้อยแล้ว")
+      router.refresh()
+      return true
+    } catch {
+      toast.error("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+      return false
+    } finally {
+      setPending(false)
+    }
+  }
+
+  function serveItem(item: OrderItemRow) {
+    const formData = new FormData()
+    formData.set("id", item.id)
+    void run(() => markItemServed(formData))
+  }
+
+  function reprint(orderId: string) {
+    const formData = new FormData()
+    formData.set("id", orderId)
+    void run(() => reprintKitchenTicket(formData))
+  }
+
+  function acknowledge(id: string) {
+    const formData = new FormData()
+    formData.set("id", id)
+    void run(() => acknowledgeNotification(formData))
+  }
+
+  async function submitItemCancel(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!cancellingItem) return
+    const formData = new FormData()
+    formData.set("id", cancellingItem.id)
+    formData.set("reason", itemReason)
+    const done = await run(() => cancelOrderItem(formData))
+    if (done) {
+      setCancellingItem(null)
+      setItemReason("")
+    }
+  }
+
+  async function submitTableCancel(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData()
+    formData.set("sessionId", detail.sessionId)
+    formData.set("reason", tableReason)
+    const done = await run(() => cancelTableSession(formData))
+    if (done) {
+      setCancellingTable(false)
+      router.push("/mobile-order/tables")
+    }
+  }
+
+  return (
+    <>
+      <AutoRefresh seconds={15} />
+
+      <div className="page-head">
+        <div>
+          <p className="t-eyebrow">
+            <Link href="/mobile-order/tables" className="row" style={{ gap: 6 }}>
+              <IconBack size={14} aria-hidden /> กลับไปผังโต๊ะ
+            </Link>
+          </p>
+          <h1 className="t-h1">โต๊ะ {detail.tableCode}</h1>
+          <p className="t-body" style={{ marginTop: 4 }}>
+            เปิดโต๊ะ <span className="num">{formatClock(detail.openedAt)}</span> ·{" "}
+            <LiveElapsed since={detail.openedAt} prefix="เปิดมาแล้ว " />
+            {detail.qrType ? ` · QR ${detail.qrType === "STATIC" ? "ถาวร" : "ชั่วคราว"}` : ""}
+            {detail.mergedTableCodes.length > 0
+              ? ` · รวมโต๊ะ ${detail.mergedTableCodes.map((c) => `โต๊ะ ${c}`).join(", ")}`
+              : ""}
+          </p>
+        </div>
+        <div className="row">
+          <span className="chip chip-brand">
+            <span className="dot" />
+            ยอดรวม ฿<span className="num">{formatBaht(detail.total)}</span>
+          </span>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={pending}
+            onClick={() => {
+              setTableReason("")
+              setCancellingTable(true)
+            }}
+          >
+            ยกเลิกโต๊ะ
+          </button>
+        </div>
+      </div>
+
+      {detail.notifications.length > 0 ? (
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {detail.notifications.map((n) => (
+            <div key={n.id} className="alert-banner danger" style={{ justifyContent: "space-between" }}>
+              <span>
+                {n.type === "CALL_STAFF" ? "ลูกค้าเรียกพนักงาน" : "ลูกค้าขอเช็กบิล"}
+                {n.reason ? ` · ${n.reason}` : ""} · {formatDateTime(n.createdAt)}
+              </span>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={pending}
+                onClick={() => acknowledge(n.id)}
+              >
+                รับทราบ
+              </button>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {detail.orders.length === 0 ? (
+        <section className="card-ui card-pad">
+          <p className="t-body">โต๊ะนี้ยังไม่มีออร์เดอร์</p>
+        </section>
+      ) : (
+        detail.orders.map((order) => (
+          <section key={order.id} className="card-ui">
+            <div className="panel-head">
+              <div>
+                <h2 className="t-h2">ออร์เดอร์ที่ {order.orderNumber}</h2>
+                <span className="t-caption num">
+                  ส่งเข้าครัว {formatDateTime(order.submittedAt)}
+                  {order.printedAt ? ` · พิมพ์ทิกเก็ตแล้ว ${formatClock(order.printedAt)}` : " · ยังไม่ได้พิมพ์ทิกเก็ต"}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-subtle btn-sm"
+                disabled={pending}
+                onClick={() => reprint(order.id)}
+              >
+                พิมพ์ทิกเก็ตซ้ำ
+              </button>
+            </div>
+
+            <ul style={{ display: "flex", flexDirection: "column" }}>
+              {order.items.map((item) => (
+                <li
+                  key={item.id}
+                  style={{
+                    padding: "12px 24px",
+                    borderTop: "1px solid var(--line)",
+                    display: "grid",
+                    gap: 6,
+                    opacity: item.status === "CANCELLED" ? 0.55 : 1,
+                  }}
+                >
+                  <div className="row" style={{ justifyContent: "space-between", gap: 10 }}>
+                    <span>
+                      <span className="num" style={{ fontWeight: 700 }}>
+                        {formatNumber(item.quantity)}×
+                      </span>{" "}
+                      <span style={{ fontWeight: 500 }}>{item.menuItemName}</span>
+                      {item.options.length > 0 ? (
+                        <span className="t-caption"> ({item.options.map((o) => o.optionName).join(", ")})</span>
+                      ) : null}
+                    </span>
+                    <span className="row" style={{ gap: 10 }}>
+                      <span className={`chip ${ITEM_STATUS[item.status].chip}`}>
+                        <span className="dot" />
+                        {ITEM_STATUS[item.status].label}
+                      </span>
+                      <span className="num" style={{ fontWeight: 600 }}>
+                        ฿{formatBaht(item.subtotal)}
+                      </span>
+                    </span>
+                  </div>
+
+                  {item.note ? <span className="t-caption">โน้ตถึงครัว: {item.note}</span> : null}
+                  {item.cancelReason ? (
+                    <span className="t-caption">เหตุผลที่ยกเลิก: {item.cancelReason}</span>
+                  ) : null}
+
+                  <div className="row" style={{ gap: 6 }}>
+                    {/* ปุ่มยกเลิกโผล่เฉพาะตอนยังรอครัวรับ — server ก็ปฏิเสธซ้ำอีกชั้นด้วย conditional update */}
+                    {item.status === "AWAITING_KITCHEN" ? (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        disabled={pending}
+                        onClick={() => {
+                          setItemReason("")
+                          setCancellingItem(item)
+                        }}
+                      >
+                        ยกเลิกรายการ
+                      </button>
+                    ) : null}
+
+                    {/* ร้านที่ไม่มี KDS ข้ามจากรอครัวรับไป "เสิร์ฟแล้ว" ได้เลย */}
+                    {item.status === "READY" || (!detail.hasKDS && item.status === "AWAITING_KITCHEN") ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={pending}
+                        onClick={() => serveItem(item)}
+                      >
+                        เสิร์ฟอาหารแล้ว
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
+
+      <Dialog open={cancellingItem !== null} onOpenChange={(open) => !open && setCancellingItem(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ยกเลิก {cancellingItem?.menuItemName}</DialogTitle>
+            <DialogDescription>
+              ยกเลิกได้เฉพาะรายการที่ครัวยังไม่เริ่มทำ — ถ้าครัวกดเริ่มปรุงไปแล้วระบบจะปฏิเสธ
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={submitItemCancel} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="field">
+              <label className="t-small" htmlFor="itemReason">
+                เหตุผล <span style={{ color: "var(--danger)" }}>*</span>
+              </label>
+              <input
+                id="itemReason"
+                className="input"
+                required
+                autoFocus
+                value={itemReason}
+                onChange={(e) => setItemReason(e.target.value)}
+                placeholder="เช่น ลูกค้าเปลี่ยนใจ / กดผิด"
+              />
+            </div>
+
+            <DialogFooter>
+              <button type="button" className="btn btn-ghost" onClick={() => setCancellingItem(null)}>
+                ไม่ยกเลิก
+              </button>
+              <button type="submit" className="btn btn-danger-solid" disabled={pending}>
+                {pending ? <IconSpinner size={17} className="animate-spin" aria-hidden /> : null}
+                ยืนยันยกเลิกรายการ
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancellingTable} onOpenChange={(open) => !open && setCancellingTable(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ยกเลิกโต๊ะ {detail.tableCode}</DialogTitle>
+            <DialogDescription>
+              รายการที่ยังไม่เสิร์ฟจะถูกยกเลิกทั้งหมด และไม่มีการออกบิลเพราะยังไม่ได้ชำระเงิน
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={submitTableCancel} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="field">
+              <label className="t-small" htmlFor="tableReason">
+                เหตุผล <span style={{ color: "var(--danger)" }}>*</span>
+              </label>
+              <input
+                id="tableReason"
+                className="input"
+                required
+                autoFocus
+                value={tableReason}
+                onChange={(e) => setTableReason(e.target.value)}
+                placeholder="เช่น ลูกค้าไม่มาแล้ว"
+              />
+            </div>
+
+            <DialogFooter>
+              <button type="button" className="btn btn-ghost" onClick={() => setCancellingTable(false)}>
+                ไม่ยกเลิก
+              </button>
+              <button type="submit" className="btn btn-danger-solid" disabled={pending}>
+                {pending ? <IconSpinner size={17} className="animate-spin" aria-hidden /> : null}
+                ยืนยันยกเลิกโต๊ะ
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

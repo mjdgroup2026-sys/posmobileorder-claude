@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { Prompt, Sarabun } from "next/font/google"
+import { Toaster } from "@/components/ui/sonner"
 import "../globals.css"
 
 // ฟอนต์คนละชุดกับฝั่งพนักงานโดยตั้งใจ — หน้าลูกค้าเปิดบนเน็ตมือถือ
@@ -25,7 +26,10 @@ export const metadata: Metadata = {
 export default function CustomerRootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th" data-theme="customer" className={`${prompt.variable} ${sarabun.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <Toaster position="top-center" richColors />
+      </body>
     </html>
   )
 }
