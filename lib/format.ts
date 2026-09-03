@@ -35,3 +35,28 @@ export function formatDate(value: Date | string): string {
   const d = typeof value === "string" ? new Date(value) : value
   return d.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" })
 }
+
+/// เวลาแบบนาฬิกา (14:32) ตามเวลาไทยเสมอ — ระบุ timeZone ชัด ๆ เพื่อให้ค่าฝั่ง server กับ client ตรงกัน
+/// ไม่งั้น container ที่รันด้วย UTC จะ render คนละเวลากับเบราว์เซอร์แล้ว hydration พัง
+export function formatClock(value: Date | string): string {
+  const d = typeof value === "string" ? new Date(value) : value
+  return d.toLocaleTimeString("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Bangkok",
+  })
+}
+
+/// ระยะเวลาเป็นข้อความไทยจากจำนวนนาที — ใช้กับ "เปิดโต๊ะมาแล้วกี่นาที" (คำนวณสดทุกครั้งที่ render)
+export function formatElapsed(minutes: number): string {
+  if (minutes < 1) return "เพิ่งเปิด"
+  if (minutes < 60) return `${minutes} นาที`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours} ชม.` : `${hours} ชม. ${rest} นาที`
+}
+
+export function minutesSince(value: Date | string, now: number = Date.now()): number {
+  const d = typeof value === "string" ? new Date(value) : value
+  return Math.max(0, Math.floor((now - d.getTime()) / 60_000))
+}

@@ -516,3 +516,56 @@
     font-weight: 500;
   }
 }
+
+/* ───────────── พิมพ์ใบเสร็จ (Phase 2.5) ─────────────
+   ใช้ window.print() ของเบราว์เซอร์ตรง ๆ — ซ่อนทุกอย่างยกเว้นกล่องใบเสร็จ
+   ทำเป็น visibility ไม่ใช่ display:none เพราะ .receipt-print อยู่ลึกในโครงหน้า
+   ถ้าซ่อน parent ด้วย display ลูกจะหายตามไปทั้งหมด */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-print,
+  .receipt-print * {
+    visibility: visible;
+  }
+  .receipt-print {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: 320px;
+    padding: 0;
+    margin: 0;
+    color: #000;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .app-shell {
+    display: block;
+  }
+  .sidebar,
+  .topbar {
+    display: none !important;
+  }
+}
+
+/* พิมพ์แผ่น QR Code (Phase 9) — ซ่อนโครงหน้าหลังร้าน เหลือเฉพาะการ์ด QR */
+@media print {
+  .qr-sheet {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+  .qr-sheet * {
+    visibility: visible;
+  }
+  .qr-sheet {
+    visibility: visible;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

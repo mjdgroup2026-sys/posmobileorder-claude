@@ -677,42 +677,42 @@ enum ResourceKey {
 - [x] เมื่อ Stock In จนเกิน reorderPoint แล้ว รายการนั้นหลุดจากการแจ้งเตือนทันที
 
 ### F5 — ขายหน้าร้าน (POS Checkout)
-- [ ] เพิ่มสินค้าลงตะกร้าได้ (ค้นหาด้วยชื่อ/SKU), ปรับจำนวน/ลบรายการก่อน checkout จริง
-- [ ] ใส่ส่วนลดท้ายบิลได้ (บาท), ระบบตรวจ `0 ≤ discount ≤ subtotal`
-- [ ] เลือกวิธีชำระเงิน CASH/TRANSFER/QR ได้; กรณี CASH คำนวณเงินทอนถูกต้อง real-time
-- [ ] Checkout เป็น `prisma.$transaction` เดียว: สร้าง Sale+SaleItem + สร้าง StockTransaction(OUT) + ลด quantity พร้อมกัน
-- [ ] **ถ้าบรรทัดใดในตะกร้าขอจำนวนเกินสต็อกที่มี → ปฏิเสธทั้งบิล ไม่ตัดสต็อกบางส่วน** พร้อมข้อความชัดเจนว่าสินค้าใดไม่พอ
-- [ ] หลัง checkout สำเร็จ แสดงใบเสร็จบนหน้าจอและพิมพ์ผ่าน browser ได้
-- [ ] เลขที่บิล (`saleNumber`) ไม่ซ้ำกันเสมอ แม้ขายพร้อมกันหลาย session (auto-gen ปลอดภัยจาก race condition)
+- [x] เพิ่มสินค้าลงตะกร้าได้ (ค้นหาด้วยชื่อ/SKU), ปรับจำนวน/ลบรายการก่อน checkout จริง
+- [x] ใส่ส่วนลดท้ายบิลได้ (บาท), ระบบตรวจ `0 ≤ discount ≤ subtotal`
+- [x] เลือกวิธีชำระเงิน CASH/TRANSFER/QR ได้; กรณี CASH คำนวณเงินทอนถูกต้อง real-time
+- [x] Checkout เป็น `prisma.$transaction` เดียว: สร้าง Sale+SaleItem + สร้าง StockTransaction(OUT) + ลด quantity พร้อมกัน
+- [x] **ถ้าบรรทัดใดในตะกร้าขอจำนวนเกินสต็อกที่มี → ปฏิเสธทั้งบิล ไม่ตัดสต็อกบางส่วน** พร้อมข้อความชัดเจนว่าสินค้าใดไม่พอ
+- [x] หลัง checkout สำเร็จ แสดงใบเสร็จบนหน้าจอและพิมพ์ผ่าน browser ได้
+- [x] เลขที่บิล (`saleNumber`) ไม่ซ้ำกันเสมอ แม้ขายพร้อมกันหลาย session (auto-gen ปลอดภัยจาก race condition)
 
 ### F6 — Void บิล (Same-day Cancellation)
-- [ ] Void บิลได้เฉพาะบิลที่ `status = COMPLETED` และขายในวันเดียวกับที่กด void
-- [ ] Void บิลที่ข้ามวันแล้ว → ระบบปฏิเสธพร้อมข้อความชัดเจน
-- [ ] Void สำเร็จ → สร้าง `StockTransaction(IN)` ชดเชยครบทุกบรรทัด และ `product.quantity` คืนถูกต้อง
-- [ ] Void ไม่ลบ/แก้ไข `StockTransaction(OUT)` เดิมที่เกิดตอนขาย
-- [ ] บิล `VOIDED` ไม่ถูกนับในยอดขายรวมของ Dashboard/Reports แต่ยังปรากฏในประวัติการขายพร้อมสถานะ
+- [x] Void บิลได้เฉพาะบิลที่ `status = COMPLETED` และขายในวันเดียวกับที่กด void
+- [x] Void บิลที่ข้ามวันแล้ว → ระบบปฏิเสธพร้อมข้อความชัดเจน
+- [x] Void สำเร็จ → สร้าง `StockTransaction(IN)` ชดเชยครบทุกบรรทัด และ `product.quantity` คืนถูกต้อง
+- [x] Void ไม่ลบ/แก้ไข `StockTransaction(OUT)` เดิมที่เกิดตอนขาย
+- [x] บิล `VOIDED` ไม่ถูกนับในยอดขายรวมของ Dashboard/Reports แต่ยังปรากฏในประวัติการขายพร้อมสถานะ
 
 ### F7 — Dashboard/Reports สำหรับยอดขาย
-- [ ] Dashboard แสดง**ยอดขายวันนี้** (Σ `total` ของ `Sale` ที่ `status = COMPLETED` และ `createdAt` = วันนี้) และ
+- [x] Dashboard แสดง**ยอดขายวันนี้** (Σ `total` ของ `Sale` ที่ `status = COMPLETED` และ `createdAt` = วันนี้) และ
       **จำนวนบิลวันนี้** ถูกต้องตรงกับข้อมูล Sale จริง พร้อม**รายการขายล่าสุด**คู่กับ recent stock transactions เดิม
-- [ ] `/reports` แสดงกราฟยอดขายรายวันย้อนหลัง 30 วัน, สินค้าขายดี Top N (group by `productId` จาก `SaleItem`),
+- [x] `/reports` แสดงกราฟยอดขายรายวันย้อนหลัง 30 วัน, สินค้าขายดี Top N (group by `productId` จาก `SaleItem`),
       สัดส่วนวิธีชำระเงิน (CASH/TRANSFER/QR) ถูกต้อง
-- [ ] เมื่อ void บิล ตัวเลขใน Dashboard/Reports อัปเดตให้ไม่นับบิลนั้นทันที
+- [x] เมื่อ void บิล ตัวเลขใน Dashboard/Reports อัปเดตให้ไม่นับบิลนั้นทันที
 
 ### F8 — จัดการหมวดหมู่สินค้า (Category CRUD)
-- [ ] สร้าง/แก้ไข/ลบหมวดหมู่สินค้าได้
-- [ ] ชื่อหมวดหมู่ซ้ำ → ระบบปฏิเสธพร้อมข้อความแจ้งเตือน
-- [ ] ลบหมวดหมู่ที่มีสินค้าผูกอยู่ไม่ได้ → แจ้งจำนวนสินค้าที่ผูกอยู่
-- [ ] ฟอร์มสินค้า (สร้าง/แก้ไข) เลือกหมวดหมู่จาก dropdown ที่ดึงจากตาราง Category เท่านั้น
-- [ ] หน้ารายการสินค้า/ตะกร้า POS กรองตามหมวดหมู่ได้ถูกต้อง (อิง `categoryId`)
+- [x] สร้าง/แก้ไข/ลบหมวดหมู่สินค้าได้
+- [x] ชื่อหมวดหมู่ซ้ำ → ระบบปฏิเสธพร้อมข้อความแจ้งเตือน
+- [x] ลบหมวดหมู่ที่มีสินค้าผูกอยู่ไม่ได้ → แจ้งจำนวนสินค้าที่ผูกอยู่
+- [x] ฟอร์มสินค้า (สร้าง/แก้ไข) เลือกหมวดหมู่จาก dropdown ที่ดึงจากตาราง Category เท่านั้น
+- [x] หน้ารายการสินค้า/ตะกร้า POS กรองตามหมวดหมู่ได้ถูกต้อง (อิง `categoryId`)
 
 ### F9 — ปิดการขายประจำวันของแคชเชียร์ (Cashier Daily Closing)
-- [ ] แคชเชียร์เปิดหน้าปิดยอด เห็นสรุปยอดขายวันนี้ของตัวเอง (ยอดรวม, แยกตามวิธีชำระเงิน, จำนวนบิล, จำนวนบิล voided)
+- [x] แคชเชียร์เปิดหน้าปิดยอด เห็นสรุปยอดขายวันนี้ของตัวเอง (ยอดรวม, แยกตามวิธีชำระเงิน, จำนวนบิล, จำนวนบิล voided)
       คำนวณจากข้อมูลจริงอัตโนมัติ ไม่ต้องกรอกเอง
-- [ ] กรอกเงินสดที่นับได้จริงแล้วระบบคำนวณส่วนต่าง (ขาด/เกิน) ให้ทันที
-- [ ] ยืนยันปิดยอดสำเร็จ → สร้าง `CashierClosing` 1 record ต่อแคชเชียร์ต่อวัน (ปิดซ้ำวันเดิมไม่ได้)
-- [ ] หลังปิดยอดแล้ว บิลของแคชเชียร์คนนั้นในวันนั้นกด Void ไม่ได้อีก (ปุ่ม Void ถูกปิด/ระบบปฏิเสธ)
-- [ ] ดูประวัติการปิดยอดย้อนหลังได้ (รายวัน ต่อแคชเชียร์)
+- [x] กรอกเงินสดที่นับได้จริงแล้วระบบคำนวณส่วนต่าง (ขาด/เกิน) ให้ทันที
+- [x] ยืนยันปิดยอดสำเร็จ → สร้าง `CashierClosing` 1 record ต่อแคชเชียร์ต่อวัน (ปิดซ้ำวันเดิมไม่ได้)
+- [x] หลังปิดยอดแล้ว บิลของแคชเชียร์คนนั้นในวันนั้นกด Void ไม่ได้อีก (ปุ่ม Void ถูกปิด/ระบบปฏิเสธ)
+- [x] ดูประวัติการปิดยอดย้อนหลังได้ (รายวัน ต่อแคชเชียร์)
 
 ### F10 — ระบบสิทธิ์ผู้ใช้ (Role & Permission Management)
 > ⛔ **นอกขอบเขต v1** — พิมพ์เขียวสำหรับเฟสถัดไป (ดู [§7 Out of Scope](#7-out-of-scope-v1))
@@ -728,43 +728,46 @@ enum ResourceKey {
 - [ ] ห้ามลบ/เปลี่ยน Role ของผู้ใช้คนสุดท้ายที่เป็น "ผู้ดูแลระบบ" (กันระบบไม่มีผู้ดูแลเหลือ)
 
 ### F11 — ผังโต๊ะ (Table Overview + รวมโต๊ะ)
-- [ ] แสดงตารางโต๊ะทั้งหมดเป็น grid พร้อม filter chip นับจำนวนต่อสถานะ (ว่าง/เปิดโต๊ะ/สั่งแล้ว/รอเช็กบิล/
+- [x] แสดงตารางโต๊ะทั้งหมดเป็น grid พร้อม filter chip นับจำนวนต่อสถานะ (ว่าง/เปิดโต๊ะ/สั่งแล้ว/รอเช็กบิล/
       ต้องการความช่วยเหลือ)
-- [ ] **การ์ดแต่ละโต๊ะที่ไม่ว่างแสดงเวลาที่เปิดโต๊ะ (นาฬิกา) และระยะเวลาที่เปิดโต๊ะ (นาที) พร้อมกันเสมอ**
-- [ ] รวมโต๊ะได้ (เลือกโต๊ะหลัก + โต๊ะรองที่ต้องว่าง) — โต๊ะรองเปลี่ยนเป็น "ไม่ว่าง/รวมกับโต๊ะหลัก" ทันที และบิล
+- [x] **การ์ดแต่ละโต๊ะที่ไม่ว่างแสดงเวลาที่เปิดโต๊ะ (นาฬิกา) และระยะเวลาที่เปิดโต๊ะ (นาที) พร้อมกันเสมอ**
+- [x] รวมโต๊ะได้ (เลือกโต๊ะหลัก + โต๊ะรองที่ต้องว่าง) — โต๊ะรองเปลี่ยนเป็น "ไม่ว่าง/รวมกับโต๊ะหลัก" ทันที และบิล
       รวมเข้าโต๊ะหลักทั้งหมด
-- [ ] ยกเลิกการรวมโต๊ะได้ก่อนปิดบิล — โต๊ะรองกลับเป็นว่าง
-- [ ] คลิกการ์ดโต๊ะที่ไม่ว่าง → ไปหน้ารายละเอียดออร์เดอร์ต่อโต๊ะ (F13)
+- [x] ยกเลิกการรวมโต๊ะได้ก่อนปิดบิล — โต๊ะรองกลับเป็นว่าง
+- [x] คลิกการ์ดโต๊ะที่ไม่ว่าง → ไปหน้ารายละเอียดออร์เดอร์ต่อโต๊ะ (F13)
 
 ### F12 — การแจ้งเตือน (Call Staff / Check Bill Notifications)
-- [ ] แยกโซน "ด่วน-ยังไม่รับทราบ" กับ "รับทราบแล้ว"
-- [ ] แต่ละการ์ดแสดงโต๊ะ, ประเภท (เรียกพนักงาน/เช็กบิล), ข้อความ/เหตุผล, เวลาสัมพัทธ์ของการแจ้งเตือนเอง
+- [x] แยกโซน "ด่วน-ยังไม่รับทราบ" กับ "รับทราบแล้ว"
+- [x] แต่ละการ์ดแสดงโต๊ะ, ประเภท (เรียกพนักงาน/เช็กบิล), ข้อความ/เหตุผล, เวลาสัมพัทธ์ของการแจ้งเตือนเอง
       **และเพิ่มเวลาที่เปิดโต๊ะ (นาฬิกา) + เปิดโต๊ะมาแล้วกี่นาที ของโต๊ะนั้น**
-- [ ] กด "รับทราบ" ย้ายการ์ดไปโซนล่างทันที (real-time ไม่ต้อง refresh หน้า)
+- [x] กด "รับทราบ" ย้ายการ์ดไปโซนล่างทันที (real-time ไม่ต้อง refresh หน้า)
 
 ### F13 — รายละเอียดออร์เดอร์ต่อโต๊ะ (Table Order Detail)
-- [ ] Header แสดงโต๊ะ, เวลาเปิดโต๊ะ, เลขออร์เดอร์, ประเภท QR, ปุ่ม "ยกเลิกโต๊ะ" (ทั้งชุด)
+- [x] Header แสดงโต๊ะ, เวลาเปิดโต๊ะ, เลขออร์เดอร์, ประเภท QR, ปุ่ม "ยกเลิกโต๊ะ" (ทั้งชุด)
 - [ ] รายการอาหารแสดง badge สถานะต่อรายการ (รอครัวรับ/กำลังปรุง/เสิร์ฟแล้ว) + ตัวปรับจำนวน
-- [ ] **ปุ่มยกเลิกรายการทีละรายการปรากฏเฉพาะรายการที่ `status = รอครัวรับ`** — หายไปทันทีที่ครัวเริ่มทำ (กด server
+      > badge ครบแล้ว · **ตัวปรับจำนวนยังไม่ทำ** — แก้จำนวนหลังส่งครัวแล้วต้องมีกติกาชดเชยของตัวเอง
+      > (ตอนนี้ใช้ยกเลิกรายการแล้วให้ลูกค้าสั่งใหม่แทน) รอยืนยันขอบเขตก่อน
+- [x] **ปุ่มยกเลิกรายการทีละรายการปรากฏเฉพาะรายการที่ `status = รอครัวรับ`** — หายไปทันทีที่ครัวเริ่มทำ (กด server
       ตรงก็ถูกปฏิเสธเช่นกัน)
-- [ ] log ประวัติการแจ้งเตือนของโต๊ะนี้แสดงอยู่ในหน้าเดียวกัน
+- [x] log ประวัติการแจ้งเตือนของโต๊ะนี้แสดงอยู่ในหน้าเดียวกัน
 - [ ] Footer: ยอดรวม, พิมพ์ทิกเก็ตซ้ำ, ปุ่มไปหน้าปิดบิล
+      > ยอดรวม + พิมพ์ทิกเก็ตซ้ำเสร็จแล้ว · **ปุ่มไปหน้าปิดบิลรอ Phase 10** (หน้า billing ยังไม่มี)
 
 ### F14 — สั่งอาหารผ่าน QR Code (Customer Ordering Flow)
-- [ ] สแกน QR → เปิด/เข้า session อัตโนมัติ ไม่ต้องรอพนักงาน
-- [ ] เมนูแสดงกลุ่มเมนูแนะนำ (สูงสุด 6 รายการ) แยกจากเมนูปกติ
-- [ ] เลือกสินค้า → หน้ากำหนดรายละเอียด (modifier group แบบ radio/checkbox ตาม `selectionType`, โน้ตถึงครัว) →
+- [x] สแกน QR → เปิด/เข้า session อัตโนมัติ ไม่ต้องรอพนักงาน
+- [x] เมนูแสดงกลุ่มเมนูแนะนำ (สูงสุด 6 รายการ) แยกจากเมนูปกติ
+- [x] เลือกสินค้า → หน้ากำหนดรายละเอียด (modifier group แบบ radio/checkbox ตาม `selectionType`, โน้ตถึงครัว) →
       ใส่ตะกร้า
-- [ ] ตะกร้าแก้จำนวน/ลบได้ก่อนกดยืนยัน — ยืนยันแล้วแก้ไม่ได้ (ต้องรอสถานะ "รอครัวรับ" แล้วให้พนักงานยกเลิกแทน)
-- [ ] "สั่งเพิ่ม" สร้าง `MobileOrder` รอบใหม่ในเซสชันเดิมได้ตลอดจนกว่าจะเช็กบิล
+- [x] ตะกร้าแก้จำนวน/ลบได้ก่อนกดยืนยัน — ยืนยันแล้วแก้ไม่ได้ (ต้องรอสถานะ "รอครัวรับ" แล้วให้พนักงานยกเลิกแทน)
+- [x] "สั่งเพิ่ม" สร้าง `MobileOrder` รอบใหม่ในเซสชันเดิมได้ตลอดจนกว่าจะเช็กบิล
 
 ### F15 — เรียกพนักงาน (Call Staff)
-- [ ] มี preset reason chip + free text
-- [ ] กดแล้วขึ้นแจ้งเตือนที่หน้า Notifications (F12) แบบ real-time ภายในไม่กี่วินาที
+- [x] มี preset reason chip + free text
+- [x] กดแล้วขึ้นแจ้งเตือนที่หน้า Notifications (F12) แบบ real-time ภายในไม่กี่วินาที
 
 ### F16 — เช็กบิล (Check Bill)
-- [ ] กดแล้ว server ถามยอดปัจจุบันจาก POS แล้วส่งกลับให้ลูกค้าเห็นยอดก่อนเลือกวิธีจ่าย
-- [ ] ตั้ง `TableSession.status = AWAITING_BILL`, โต๊ะขึ้นสถานะ "รอเช็กบิล" บนผังโต๊ะ
+- [x] กดแล้ว server ถามยอดปัจจุบันจาก POS แล้วส่งกลับให้ลูกค้าเห็นยอดก่อนเลือกวิธีจ่าย
+- [x] ตั้ง `TableSession.status = AWAITING_BILL`, โต๊ะขึ้นสถานะ "รอเช็กบิล" บนผังโต๊ะ
 
 ### F17 — ชำระเงิน (PromptPay + Card/EDC) และปิดโต๊ะอัตโนมัติ
 - [ ] เลือกวิธีจ่าย: PromptPay (default) หรือ Card ที่เคาน์เตอร์
@@ -787,9 +790,9 @@ enum ResourceKey {
 - [ ] ส่งไม่สำเร็จไม่กระทบ flow หลัก (บันทึก log ไว้ตรวจสอบภายหลัง)
 
 ### F20 — จัดการ QR Code (Static/Dynamic)
-- [ ] เลือกประเภท QR ต่อโต๊ะหรือเป็นช่วง (bulk) ได้
-- [ ] ดาวน์โหลด/สั่งพิมพ์ QR ทีละใบหรือทั้งชุด
-- [ ] DYNAMIC ที่ invalidate แล้ว มีปุ่ม "พิมพ์ใบใหม่" สร้าง token ใหม่ทันที
+- [x] เลือกประเภท QR ต่อโต๊ะหรือเป็นช่วง (bulk) ได้
+- [x] ดาวน์โหลด/สั่งพิมพ์ QR ทีละใบหรือทั้งชุด
+- [x] DYNAMIC ที่ invalidate แล้ว มีปุ่ม "พิมพ์ใบใหม่" สร้าง token ใหม่ทันที
 
 ### F21 — POS Manager: ตั้งค่าธีม/แบรนด์/เมนูเด่น
 - [ ] แก้ไข cover/logo/สีธีม/ชื่อร้านผ่านหน้าเว็บได้ ไม่ต้องแก้โค้ด — สีธีมมีผลเฉพาะ route group
@@ -1011,33 +1014,35 @@ enum ResourceKey {
 - [x] หน้าเสริมตาม design + เชื่อมลิงก์ใน Sidebar/ProfileMenu: **รายงาน** (`/reports` — สรุป 30 วัน + กราฟ),
       **ผู้ใช้งาน** (`/users` — list จากตาราง user), **ตั้งค่า** (`/settings` — แก้โปรไฟล์/เปลี่ยนรหัสผ่านผ่าน Better Auth)
 
-### ⏭️ Phase 2.5 — POS Module (แทรกต่อจาก Phase 2 ก่อนเริ่ม Phase 3)
+### ✅ Phase 2.5 — POS Module (แทรกต่อจาก Phase 2 ก่อนเริ่ม Phase 3)
 เพิ่มระบบขายหน้าร้าน ต่อยอดจากกลไก Stock Out เดิม
 
-- [ ] เพิ่ม schema: `Sale`, `SaleItem`, enum `PaymentMethod`, enum `SaleStatus`, `StockTransaction.saleId` (FK optional)
-- [ ] รัน migration: `prisma migrate dev --name add_pos`
-- [ ] Server actions (Zod validation ตาม pattern เดียวกับ Stock In/Out เดิม):
+- [x] เพิ่ม schema: `Sale`, `SaleItem`, enum `PaymentMethod`, enum `SaleStatus`, `StockTransaction.saleId` (FK optional)
+- [x] รัน migration: `20260903041500_add_pos` — **เขียน SQL เอง** ไม่ใช้ `migrate dev` เพราะการย้าย
+      `product.category` (String) → `categoryId` (FK) ต้อง backfill ข้อมูลก่อนลบคอลัมน์ (ดูกับดักใน CLAUDE.md)
+- [x] Server actions (Zod validation ตาม pattern เดียวกับ Stock In/Out เดิม):
   - `createSale` — checkout, atomic `$transaction`, กันขายเกินสต็อก
   - `voidSale` — atomic `$transaction`, ตรวจ same-day, สร้าง StockTransaction(IN) ชดเชย
   - `listSales`, `getSaleById` — สำหรับหน้าประวัติการขาย
-- [ ] Auto sale-number generator รูปแบบ `INV-000001` (หา max +1 แบบเดียวกับ SKU auto-gen)
-- [ ] หน้า `/pos` — product picker + cart + checkout dialog + receipt/print view
-- [ ] หน้า `/pos/history` — list + filter วันที่/สถานะ + void action
-- [ ] Sidebar: เพิ่มเมนู "ขายหน้าร้าน (POS)" และ "ประวัติการขาย"
-- [ ] Dashboard: การ์ดยอดขายวันนี้ / จำนวนบิลวันนี้ / รายการขายล่าสุด
-- [ ] `/reports`: กราฟยอดขาย 30 วัน, สินค้าขายดี Top N, สัดส่วนวิธีชำระเงิน
-- [ ] Seed script: เพิ่มตัวอย่างบิลขาย ~5-10 บิล (คละวิธีชำระเงิน + มีบิล voided อย่างน้อย 1 บิล) สำหรับ demo/report
-- [ ] เพิ่ม schema: `Category`, เปลี่ยน `Product.category` (String) เป็น `Product.categoryId` (FK → Category) +
+- [x] Auto sale-number generator รูปแบบ `INV-000001` (max +1 **+ `pg_advisory_xact_lock`** — max+1 เฉย ๆ
+      ชนกันจริงตอนขายพร้อมกัน 8 บิล ผ่านแค่ 5 · มีเทส concurrent ยืนยัน)
+- [x] หน้า `/pos` — product picker + cart + checkout dialog + receipt/print view
+- [x] หน้า `/pos/history` — list + filter วันที่/สถานะ + void action
+- [x] Sidebar: เพิ่มเมนู "ขายหน้าร้าน (POS)" และ "ประวัติการขาย"
+- [x] Dashboard: การ์ดยอดขายวันนี้ / จำนวนบิลวันนี้ / รายการขายล่าสุด
+- [x] `/reports`: กราฟยอดขาย 30 วัน, สินค้าขายดี Top N, สัดส่วนวิธีชำระเงิน
+- [x] Seed script: เพิ่มตัวอย่างบิลขาย ~5-10 บิล (คละวิธีชำระเงิน + มีบิล voided อย่างน้อย 1 บิล) สำหรับ demo/report
+- [x] เพิ่ม schema: `Category`, เปลี่ยน `Product.category` (String) เป็น `Product.categoryId` (FK → Category) +
       migrate ข้อมูลหมวดหมู่เดิมที่เป็น string ให้กลายเป็น Category record
-- [ ] เพิ่ม schema: `CashierClosing` + unique `(cashierId, closingDate)`
-- [ ] Server actions: `createCategory`, `updateCategory`, `deleteCategory` (block ถ้ามีสินค้าผูกอยู่)
-- [ ] Server actions: `closeCashierDay` (atomic — สรุปยอด + บันทึก CashierClosing), `getTodayClosingStatus`,
+- [x] เพิ่ม schema: `CashierClosing` + unique `(cashierId, closingDate)`
+- [x] Server actions: `createCategory`, `updateCategory`, `deleteCategory` (block ถ้ามีสินค้าผูกอยู่)
+- [x] Server actions: `closeCashierDay` (atomic — สรุปยอด + บันทึก CashierClosing), `getTodayClosingStatus`,
       `listClosingHistory`
-- [ ] แก้ `voidSale` ให้ตรวจก่อนว่ามี `CashierClosing` ของแคชเชียร์+วันนั้นแล้วหรือยัง ถ้ามี → ปฏิเสธการ void
-- [ ] หน้า `/categories` (list + create/edit/delete dialog)
-- [ ] หน้า `/pos/closing` (สรุปยอดวันนี้ + ฟอร์มนับเงินสด + ประวัติปิดยอด)
-- [ ] Sidebar: เพิ่มเมนู "หมวดหมู่สินค้า" และ "ปิดยอดประจำวัน"
-- [ ] ตรวจสอบ: ขายเกินสต็อกที่มี → ถูกปฏิเสธทั้งบิล ไม่ตัดสต็อกบางส่วน; checkout และ void เป็น atomic ทั้งคู่
+- [x] แก้ `voidSale` ให้ตรวจก่อนว่ามี `CashierClosing` ของแคชเชียร์+วันนั้นแล้วหรือยัง ถ้ามี → ปฏิเสธการ void
+- [x] หน้า `/categories` (list + create/edit/delete dialog)
+- [x] หน้า `/pos/closing` (สรุปยอดวันนี้ + ฟอร์มนับเงินสด + ประวัติปิดยอด)
+- [x] Sidebar: เพิ่มเมนู "หมวดหมู่สินค้า" และ "ปิดยอดประจำวัน"
+- [x] ตรวจสอบ: ขายเกินสต็อกที่มี → ถูกปฏิเสธทั้งบิล ไม่ตัดสต็อกบางส่วน; checkout และ void เป็น atomic ทั้งคู่
       (ทดสอบ concurrent checkout ไม่ทำให้สต็อกติดลบ); ตัวเลข Dashboard/Reports ตรงกับข้อมูล Sale จริงเสมอ
       รวมถึงหลัง void; ลบหมวดหมู่ที่มีสินค้าผูกอยู่ไม่ได้; ปิดยอดซ้ำวันเดิมไม่ได้; void บิลหลังปิดยอดแล้วไม่ได้
 
@@ -1188,31 +1193,39 @@ enum ResourceKey {
       block; ไม่มีสิทธิ์ Add/Edit/Delete → เรียก Server Action ตรงถูกปฏิเสธแม้ UI ไม่ได้ซ่อนปุ่ม; ลบ/เปลี่ยน role
       ผู้ดูแลระบบคนสุดท้ายไม่ได้; แก้ชื่อ/ลบบทบาทระบบไม่ได้
 
-### ⏭️ Phase 6 — MJD Mobile Order: Data Model & Table/Session Core
-- [ ] Schema: `Table`, `TableSession`, `MenuItem`, `ModifierGroup`, `ModifierOption`, `MobileOrder`,
+### ✅ Phase 6 — MJD Mobile Order: Data Model & Table/Session Core
+- [x] Schema: `Table`, `TableSession`, `MenuItem`, `ModifierGroup`, `ModifierOption`, `MobileOrder`,
       `MobileOrderItem`, `QRCode`, `Notification`, `LineNotificationLog`, `StoreSettings`, `Member`,
       `MemberPointTransaction` + ทุก enum ใหม่ + แก้ `Sale` (`channel`, `tableSessionId`)
-- [ ] Migration: `prisma migrate dev --name add_mobile_order`
-- [ ] Seed: โต๊ะตัวอย่าง 16 โต๊ะ, เมนูตัวอย่าง 15–20 รายการ (มี featured 6, มี modifier), `StoreSettings` เริ่มต้น
-- [ ] Server actions หลัก: `openTableSession`, `mergeTables`, `unmergeTables`, `cancelTableSession`
-- [ ] ตรวจสอบ: เปิด/รวม/ยกเลิกโต๊ะผ่าน server action ได้ครบ ผ่าน `prisma studio`
+- [x] Migration: `prisma migrate dev --name add_mobile_order`
+- [x] Seed: โต๊ะตัวอย่าง 16 โต๊ะ, เมนูตัวอย่าง 15–20 รายการ (มี featured 6, มี modifier), `StoreSettings` เริ่มต้น
+- [x] Server actions หลัก: `openTableSession`, `mergeTables`, `unmergeTables`, `cancelTableSession`
+- [x] ตรวจสอบ: เปิด/รวม/ยกเลิกโต๊ะผ่าน server action ได้ครบ ผ่าน `prisma studio`
 
-### ⏭️ Phase 7 — Staff Table Overview, Notifications & Merge UI
-- [ ] หน้า `/mobile-order/tables` (grid + filter + 2 จุดเวลาใหม่)
-- [ ] หน้า `/mobile-order/notifications` (2 จุดเวลาใหม่ + acknowledge)
-- [ ] Sidebar: เพิ่มกลุ่มเมนู MJD Mobile Order
-- [ ] ตรวจสอบ: รวมโต๊ะแล้วบิลรวมเข้าโต๊ะหลักถูกต้อง, เวลาเปิดโต๊ะ/นาทีที่เปิดแสดงถูกทั้ง 2 หน้า
+### ✅ Phase 7 — Staff Table Overview, Notifications & Merge UI
+- [x] หน้า `/mobile-order/tables` (grid + filter + 2 จุดเวลาใหม่)
+- [x] หน้า `/mobile-order/notifications` (2 จุดเวลาใหม่ + acknowledge)
+- [x] Sidebar: เพิ่มกลุ่มเมนู MJD Mobile Order
+- [x] ตรวจสอบ: รวมโต๊ะแล้วบิลรวมเข้าโต๊ะหลักถูกต้อง, เวลาเปิดโต๊ะ/นาทีที่เปิดแสดงถูกทั้ง 2 หน้า
 
 > ⚠️ **กับดัก**: อย่าเก็บ "นาทีที่เปิดโต๊ะ" เป็นฟิลด์ที่คำนวณครั้งเดียวตอนสร้างการ์ด — ต้องคำนวณสดจาก `openedAt`
 > ทุกครั้งที่ render/refresh มิฉะนั้นตัวเลขจะค้าง
 
 ### ⏭️ Phase 8 — Kitchen Ticket Flow (Printer + KDS) & Per-Item Cancel
 - [ ] เชื่อมเครื่องพิมพ์ครัว (LAN/USB/Serial) — พิมพ์ทิกเก็ตทันทีที่ `MobileOrder` ถูกสร้าง
-- [ ] หน้า `/mobile-order/kitchen` (KDS 3 คอลัมน์ + ปุ่มเริ่มทำ/เสร็จ)
-- [ ] Fallback ไม่มี KDS: ปุ่ม "เสิร์ฟอาหารแล้ว" บน `/mobile-order/tables/[tableId]`
-- [ ] ปุ่มยกเลิกรายการ (เฉพาะ `AWAITING_KITCHEN`) บนหน้ารายละเอียดออร์เดอร์โต๊ะ
+      > 🔧 เขียนไดรเวอร์ไว้แล้วที่ `lib/kitchen-printer.ts` (ESC/POS over TCP พอร์ต 9100 + code page ไทย PC874)
+      > เปิดใช้ด้วย env `KITCHEN_PRINTER_HOST` · ไม่ตั้ง = ไม่มีเครื่องพิมพ์ ระบบทำงานต่อได้ปกติ
+      > **ยังติ๊กไม่ได้เพราะต้องทดสอบกับเครื่องพิมพ์จริงในร้าน** (ผลการพิมพ์บันทึกที่ `MobileOrder.printedAt`)
+- [x] หน้า `/mobile-order/kitchen` (KDS 3 คอลัมน์ + ปุ่มเริ่มทำ/เสร็จ)
+- [x] Fallback ไม่มี KDS: ปุ่ม "เสิร์ฟอาหารแล้ว" บน `/mobile-order/tables/[tableId]`
+- [x] ปุ่มยกเลิกรายการ (เฉพาะ `AWAITING_KITCHEN`) บนหน้ารายละเอียดออร์เดอร์โต๊ะ
 - [ ] Socket.IO server ติดตั้งคู่กับ custom Next.js server สำหรับ push สถานะ POS↔ครัว
-- [ ] ตรวจสอบ: ยกเลิกรายการหลังครัวกดเริ่มทำแล้ว → ถูกปฏิเสธเสมอ (ทดสอบ concurrent)
+      > 🔧 **ยังไม่ทำ — ต้องตัดสินใจเรื่องสถาปัตยกรรมก่อน**: Socket.IO ต้องมี custom server ซึ่งใช้ร่วมกับ
+      > `output: "standalone"` + blue/green ตอน deploy ไม่ได้ตรง ๆ · ตอนนี้ใช้ทางสำรองที่ทำงานได้จริงแทน:
+      > `components/auto-refresh.tsx` (ดึงซ้ำทุก 10 วิ บน KDS, 15 วิ บนผังโต๊ะ, หยุดเมื่อแท็บถูกซ่อน)
+      > `+ GET /api/mobile-order/events?since=…` ที่สเปกกำหนดไว้เป็น fallback อยู่แล้ว
+- [x] ตรวจสอบ: ยกเลิกรายการหลังครัวกดเริ่มทำแล้ว → ถูกปฏิเสธเสมอ (ทดสอบ concurrent)
+      — `__tests__/integration/order-items.test.ts` ยิงยกเลิกพร้อมกับ "เริ่มปรุง" ต้องสำเร็จฝั่งเดียวเสมอ
 
 > ⚠️ **กับดัก — race condition ยกเลิก vs เริ่มทำ**: ลูกค้า/พนักงานกดยกเลิกรายการ พร้อม ๆ กับครัวกด "เริ่มทำ" บน
 > KDS ต้องใช้ conditional update (`UPDATE ... WHERE status='AWAITING_KITCHEN'`) ใน `prisma.$transaction`
@@ -1222,11 +1235,14 @@ enum ResourceKey {
 > (`GET /api/mobile-order/events?since=<lastSeenAt>`) ให้ดึงเหตุการณ์ที่พลาดไปตอนเชื่อมต่อกลับ ห้ามพึ่ง
 > WebSocket delivery guarantee อย่างเดียว มิฉะนั้นออร์เดอร์อาจ "หาย" จากมุมมองของ POS
 
-### ⏭️ Phase 9 — Customer Ordering Flow & QR Code Management
-- [ ] Route `/order/[qrToken]/*` ทั้งชุด (เมนู, รายละเอียด, ตะกร้า, ยืนยัน, สถานะ)
-- [ ] หน้า `/mobile-order/qr-codes` (generate ด้วย `qrcode` npm, bulk/individual download+reprint)
-- [ ] Server actions: `generateQRCode`, `invalidateQRCode`, `reprintQRCode`
+### ✅ Phase 9 — Customer Ordering Flow & QR Code Management
+- [x] Route `/order/[qrToken]/*` ทั้งชุด (เมนู, รายละเอียด, ตะกร้า, ยืนยัน, สถานะ)
+- [x] หน้า `/mobile-order/qr-codes` (generate ด้วย `qrcode` npm, bulk/individual download+reprint)
+- [x] Server actions: `generateQRCode`, `invalidateQRCode`, `reprintQRCode`
 - [ ] ตรวจสอบ: สแกนแล้วสั่งอาหารครบ flow ได้จริงบนมือถือ
+      > ✅ ทดสอบครบ flow ด้วย integration test (__tests__/integration/customer-order.test.ts) และยิง HTTP
+      > ทุกหน้าบนเครื่อง dev แล้ว · **เหลือทดสอบด้วยมือถือจริงที่สแกน QR จากหน้าจอ/กระดาษ**
+      > (ต้องตั้ง APP_BASE_URL ให้ชี้โดเมนที่มือถือเปิดได้ก่อน ไม่ใช่ localhost)
 
 > ⚠️ **กับดัก — dynamic QR reuse-after-payment race**: ต้องตรวจ `QRCode.status=ACTIVE` **และ** ไม่มี
 > `TableSession` ที่ `OPEN` อยู่ของโต๊ะนั้น ในทรานแซคชันเดียวกันตอนเปิด session ใหม่ — ป้องกันลูกค้า refresh

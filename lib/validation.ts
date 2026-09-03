@@ -40,7 +40,7 @@ export const productSchema = z.object({
     .max(40, "SKU ยาวเกินไป")
     .optional()
     .transform((v) => (v === "" ? undefined : v)),
-  category: z.string().trim().min(1, "กรุณาระบุหมวดหมู่สินค้า").max(60, "ชื่อหมวดหมู่ยาวเกินไป"),
+  categoryId: z.string({ error: "กรุณาเลือกหมวดหมู่สินค้า" }).trim().min(1, "กรุณาเลือกหมวดหมู่สินค้า"),
   unit: z.string().trim().min(1, "กรุณาระบุหน่วยนับ").max(20, "หน่วยนับยาวเกินไป"),
   price: z.coerce
     .number({ error: "ราคาต้องเป็นตัวเลข" })
@@ -72,3 +72,162 @@ export const profileSchema = z.object({
 
 export type ProductInput = z.infer<typeof productSchema>
 export type StockMoveInput = z.infer<typeof stockMoveSchema>
+
+// ───────────────────────────── POS (Phase 2.5) ─────────────────────────────
+
+/// เพดานจำนวนเงินต่อบิล — กัน Decimal(12,2) ล้นและกันค่าที่พิมพ์พลาดจนยอดขายเพี้ยนถาวร
+const MAX_MONEY = 9_999_999
+
+const money = (label: string) =>
+  z.coerce
+    .number({ error: `${label} ต้องเป็นตัวเลข` })
+    .min(0, `${label} ต้องไม่ติดลบ`)
+    .max(MAX_MONEY, `${label} สูงเกินไป`)
+
+export const categorySchema = z.object({
+  name: z.string({ error: "กรุณากรอกชื่อหมวดหมู่" }).trim().min(1, "กรุณากรอกชื่อหมวดหมู่").max(60, "ชื่อหมวดหมู่ยาวเกินไป"),
+})
+
+export const cartItemSchema = z.object({
+  productId: z.string({ error: "กรุณาเลือกสินค้า" }).trim().min(1, "กรุณาเลือกสินค้า"),
+  quantity: positiveInt("จำนวน"),
+})
+
+/// ตะกร้าถูกส่งมาเป็น JSON string ในฟิลด์ `items` ของ FormData
+export const saleSchema = z.object({
+  items: z
+    .array(cartItemSchema, { error: "ตะกร้าไม่ถูกต้อง" })
+    .min(1, "กรุณาเพิ่มสินค้าลงตะกร้าก่อนชำระเงิน")
+    .max(200, "รายการในตะกร้ามากเกินไป"),
+  discount: money("ส่วนลด"),
+  paymentMethod: z.enum(["CASH", "TRANSFER", "QR"], { error: "กรุณาเลือกวิธีชำระเงิน" }),
+  amountReceived: money("จำนวนเงินที่รับ"),
+  note: z
+    .string({ error: "หมายเหตุไม่ถูกต้อง" })
+    .trim()
+    .max(200, "หมายเหตุยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+export const voidSaleSchema = z.object({
+  id: z.string({ error: "ไม่พบบิลที่ต้องการยกเลิก" }).trim().min(1, "ไม่พบบิลที่ต้องการยกเลิก"),
+  reason: z
+    .string({ error: "เหตุผลไม่ถูกต้อง" })
+    .trim()
+    .min(1, "กรุณาระบุเหตุผลที่ยกเลิกบิล")
+    .max(200, "เหตุผลยาวเกินไป"),
+})
+
+export const closingSchema = z.object({
+  countedCash: money("เงินสดที่นับได้"),
+  note: z
+    .string({ error: "หมายเหตุไม่ถูกต้อง" })
+    .trim()
+    .max(200, "หมายเหตุยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+/// แปลง JSON string ของตะกร้าเป็น array ก่อนส่งเข้า zod — พังเมื่อไหร่คืน [] ให้ zod ฟ้องเป็นภาษาไทยแทน
+export function parseCartJson(raw: FormDataEntryValue | null): unknown {
+  if (typeof raw !== "string" || raw.trim() === "") return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export type CategoryInput = z.infer<typeof categorySchema>
+export type SaleInput = z.infer<typeof saleSchema>
+export type ClosingInput = z.infer<typeof closingSchema>
+
+// ───────────────────── MJD Mobile Order (Phase 6) ─────────────────────
+
+const requiredId = (label: string) =>
+  z.string({ error: label }).trim().min(1, label)
+
+/// เปิดโต๊ะได้ 2 ทาง: ลูกค้าสแกน QR (qrToken) หรือพนักงานกดเปิดเอง (tableId) — ต้องมีอย่างน้อยหนึ่งอย่าง
+export const openTableSchema = z
+  .object({
+    tableId: z.string().trim().optional().transform((v) => (v === "" ? undefined : v)),
+    qrToken: z.string().trim().optional().transform((v) => (v === "" ? undefined : v)),
+  })
+  .refine((v) => Boolean(v.tableId ?? v.qrToken), { message: "ไม่พบโต๊ะที่ต้องการเปิด" })
+
+export const mergeTablesSchema = z
+  .object({
+    primaryTableId: requiredId("กรุณาเลือกโต๊ะหลัก"),
+    secondaryTableId: requiredId("กรุณาเลือกโต๊ะที่จะรวม"),
+  })
+  .refine((v) => v.primaryTableId !== v.secondaryTableId, {
+    message: "รวมโต๊ะกับตัวเองไม่ได้",
+    path: ["secondaryTableId"],
+  })
+
+export const unmergeTableSchema = z.object({
+  secondaryTableId: requiredId("กรุณาเลือกโต๊ะที่จะยกเลิกการรวม"),
+})
+
+export const cancelSessionSchema = z.object({
+  sessionId: requiredId("ไม่พบโต๊ะที่ต้องการยกเลิก"),
+  reason: z
+    .string({ error: "เหตุผลไม่ถูกต้อง" })
+    .trim()
+    .min(1, "กรุณาระบุเหตุผลที่ยกเลิกโต๊ะ")
+    .max(200, "เหตุผลยาวเกินไป"),
+})
+
+export const cancelOrderItemSchema = z.object({
+  id: requiredId("ไม่พบรายการอาหารที่ต้องการยกเลิก"),
+  reason: z
+    .string({ error: "เหตุผลไม่ถูกต้อง" })
+    .trim()
+    .min(1, "กรุณาระบุเหตุผลที่ยกเลิกรายการ")
+    .max(200, "เหตุผลยาวเกินไป"),
+})
+
+// ───────────────────── ฝั่งลูกค้า (Phase 9) ─────────────────────
+
+export const cartLineSchema = z.object({
+  menuItemId: requiredId("กรุณาเลือกเมนู"),
+  quantity: positiveInt("จำนวน"),
+  optionIds: z.array(z.string().trim().min(1)).max(20, "เลือกตัวเลือกมากเกินไป").default([]),
+  note: z
+    .string({ error: "โน้ตไม่ถูกต้อง" })
+    .trim()
+    .max(200, "โน้ตยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+export const submitOrderSchema = z.object({
+  qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
+  items: z
+    .array(cartLineSchema, { error: "ตะกร้าไม่ถูกต้อง" })
+    .min(1, "กรุณาเลือกเมนูก่อนยืนยันออร์เดอร์")
+    .max(100, "รายการในตะกร้ามากเกินไป"),
+})
+
+export const callStaffSchema = z.object({
+  qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
+  reason: z
+    .string({ error: "ข้อความไม่ถูกต้อง" })
+    .trim()
+    .max(200, "ข้อความยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+export const qrTokenSchema = z.object({
+  qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
+})
+
+export const generateQrSchema = z.object({
+  tableId: requiredId("กรุณาเลือกโต๊ะ"),
+  type: z.enum(["STATIC", "DYNAMIC"], { error: "ประเภท QR ไม่ถูกต้อง" }),
+})
+
+export type CartLineInput = z.infer<typeof cartLineSchema>

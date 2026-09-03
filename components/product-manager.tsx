@@ -27,9 +27,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
+export type CategoryOption = { id: string; name: string }
+
 type Props = {
   products: ProductListItem[]
-  categories: string[]
+  categories: CategoryOption[]
   search: string
   category: string
   onlyLow: boolean
@@ -170,8 +172,8 @@ export function ProductManager({ products, categories, search, category, onlyLow
             >
               <option value="all">ทุกหมวดหมู่</option>
               {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+                <option key={c.id} value={c.id}>
+                  {c.name}
                 </option>
               ))}
             </select>
@@ -309,23 +311,31 @@ export function ProductManager({ products, categories, search, category, onlyLow
               </div>
 
               <div className="field">
-                <label className="t-small" htmlFor="category">
+                <label className="t-small" htmlFor="categoryId">
                   หมวดหมู่ <span style={{ color: "var(--danger)" }}>*</span>
                 </label>
-                <input
-                  id="category"
-                  name="category"
-                  className="input"
+                <select
+                  id="categoryId"
+                  name="categoryId"
+                  className="select"
                   required
-                  list="category-options"
-                  defaultValue={current?.category ?? ""}
-                />
-                <datalist id="category-options">
+                  defaultValue={current?.categoryId ?? ""}
+                >
+                  <option value="" disabled>
+                    เลือกหมวดหมู่
+                  </option>
                   {categories.map((c) => (
-                    <option key={c} value={c} />
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
                   ))}
-                </datalist>
-                {fieldErrors.category ? <span className="field-hint error">{fieldErrors.category}</span> : null}
+                </select>
+                {categories.length === 0 ? (
+                  <span className="field-hint">ยังไม่มีหมวดหมู่ในระบบ — เพิ่มได้ที่หน้า “หมวดหมู่สินค้า”</span>
+                ) : null}
+                {fieldErrors.categoryId ? (
+                  <span className="field-hint error">{fieldErrors.categoryId}</span>
+                ) : null}
               </div>
             </div>
 

@@ -10,6 +10,8 @@ const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อน
 
 function revalidateProductPages() {
   revalidatePath("/products")
+  revalidatePath("/pos")
+  revalidatePath("/categories")
   revalidatePath("/")
   revalidatePath("/stock-in")
   revalidatePath("/stock-out")
@@ -36,7 +38,7 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
   const parsed = productSchema.safeParse({
     name: formData.get("name"),
     sku: formData.get("sku"),
-    category: formData.get("category"),
+    categoryId: formData.get("categoryId"),
     unit: formData.get("unit"),
     price: formData.get("price"),
     reorderPoint: formData.get("reorderPoint"),
@@ -59,7 +61,7 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
         data: {
           sku,
           name: data.name,
-          category: data.category,
+          categoryId: data.categoryId,
           unit: data.unit,
           price: data.price.toFixed(2),
           reorderPoint: data.reorderPoint,
@@ -69,6 +71,14 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
       return { ok: true, message: `เพิ่มสินค้า ${data.name} (${sku}) เรียบร้อยแล้ว` }
     } catch (error) {
       const code = (error as { code?: string }).code
+      // P2003 = FK violation — หมวดหมู่ที่เลือกถูกลบไปแล้วระหว่างที่ฟอร์มเปิดค้างอยู่
+      if (code === "P2003") {
+        return {
+          ok: false,
+          error: "ไม่พบหมวดหมู่ที่เลือก กรุณาเลือกใหม่อีกครั้ง",
+          fieldErrors: { categoryId: "หมวดหมู่นี้ถูกลบไปแล้ว" },
+        }
+      }
       if (code !== "P2002") {
         return { ok: false, error: "บันทึกสินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
       }
@@ -99,7 +109,7 @@ export async function updateProduct(formData: FormData): Promise<ActionResult> {
   const parsed = productSchema.safeParse({
     name: formData.get("name"),
     sku: formData.get("sku"),
-    category: formData.get("category"),
+    categoryId: formData.get("categoryId"),
     unit: formData.get("unit"),
     price: formData.get("price"),
     reorderPoint: formData.get("reorderPoint"),
@@ -121,7 +131,7 @@ export async function updateProduct(formData: FormData): Promise<ActionResult> {
       data: {
         ...(data.sku ? { sku: data.sku } : {}),
         name: data.name,
-        category: data.category,
+        categoryId: data.categoryId,
         unit: data.unit,
         price: data.price.toFixed(2),
         reorderPoint: data.reorderPoint,
@@ -137,6 +147,13 @@ export async function updateProduct(formData: FormData): Promise<ActionResult> {
       }
     }
     if (code === "P2025") return { ok: false, error: "ไม่พบสินค้าที่ต้องการแก้ไข" }
+    if (code === "P2003") {
+      return {
+        ok: false,
+        error: "ไม่พบหมวดหมู่ที่เลือก กรุณาเลือกใหม่อีกครั้ง",
+        fieldErrors: { categoryId: "หมวดหมู่นี้ถูกลบไปแล้ว" },
+      }
+    }
     return { ok: false, error: "แก้ไขสินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
   }
 

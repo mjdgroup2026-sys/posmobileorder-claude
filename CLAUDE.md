@@ -7,8 +7,9 @@ POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **M
 ร้านอาหารแบบ table service, `Sale.channel = MOBILE_ORDER`) ทั้งสองช่องทางปิดบิลเข้า `Sale`/`SaleItem` ชุดเดียวกัน
 ไม่ใช่ระบบแยก — ดูหัวข้อ [MJD Mobile Order](#-mjd-mobile-order-phase-612--ยังไม่เริ่ม) ท้ายไฟล์นี้
 
-> ✅ **Phase 1–2 เสร็จแล้ว** — โครงโปรเจกต์ ฐานข้อมูล Auth และฟีเจอร์คลังสินค้าใช้งานได้จริง
-> ส่วน Phase 2.5 ขึ้นไป (POS, MJD Mobile Order) ยังไม่ได้ทำ (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
+> ✅ **Phase 1–2, 2.5 และ 6–9 เสร็จแล้ว** — คลังสินค้า, POS หน้าร้าน และ MJD Mobile Order ตั้งแต่ผังโต๊ะ
+> KDS ไปจนถึงลูกค้าสแกน QR สั่งอาหารเองได้ครบ · เหลือ Phase 10–12 (ชำระเงิน/LINE/CRM) และงานค้างใน
+> Phase 5 (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
 >
 > **dev server รันที่ port 3001** (`pnpm dev`) เพราะ container `pos-app` ของโปรเจกต์ POS_Shop เดิม
 > ยึด 3000 อยู่ · `BETTER_AUTH_URL` ใน `.env` ต้องตรงกับ origin ที่ใช้จริงเสมอ ไม่งั้น Better Auth
@@ -66,7 +67,8 @@ script เหล่านี้ต้องตั้งใน `package.json` ต
 |---|---|
 | `pnpm lint` | ESLint (flat config; Next.js 16 ไม่มี `next lint` แล้ว) |
 | `npx tsc --noEmit` | typecheck (ถ้าฟ้อง `LayoutProps`/`PageProps` ไม่รู้จัก ให้รัน `npx next typegen` ก่อน) |
-| `pnpm db:seed` | seed ข้อมูลตัวอย่าง SKU-1001…SKU-1007 |
+| `pnpm db:seed` | seed ข้อมูลตัวอย่าง SKU-1001…SKU-1007 + บิลขายตัวอย่าง 8 บิล (ต้องมีผู้ใช้ในระบบก่อน) |
+| `pnpm db:create-user "อีเมล" "รหัสผ่าน" "ชื่อ"` | สร้างบัญชีพนักงาน (สมัครเองผ่านหน้าเว็บถูกปิดด้วย `disableSignUp`) |
 | `pnpm db:generate` | generate Prisma Client (ต้อง **รีสตาร์ต dev server** หลังรันเสมอ) |
 
 ## การทดสอบ
@@ -227,7 +229,8 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   ```bash
   grep -rn '\$queryRaw\|\$executeRaw' --include='*.ts' . --exclude-dir=node_modules --exclude-dir=generated
   ```
-  ปัจจุบันมี raw SQL อยู่ที่ `lib/queries.ts` (6 จุด) และ `app/actions/products.ts` (1 จุด — `nextSku()`)
+  ปัจจุบันมี raw SQL อยู่ที่ `lib/queries.ts` (7 จุด), `app/actions/products.ts` (1 จุด — `nextSku()`)
+  และ `app/actions/sales.ts` (2 จุด — advisory lock + `nextSaleNumber()`)
 - **Client Component ที่ใช้ `useSearchParams()` ต้องมี `<Suspense>` ครอบ** ถ้าหน้านั้นถูก prerender แบบ static
   (หน้า auth ทั้งหมดเข้าข่าย) ไม่งั้น `pnpm build` จะพัง
 - **Next.js 16** `params`/`searchParams`/`cookies()`/`headers()` เป็น Promise ต้อง `await` ทุกครั้ง
@@ -239,21 +242,37 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   ฝั่งเบราว์เซอร์ ถ้า CI build โดยไม่ส่ง `--build-arg` ค่า default จะติดไปกับ image (เคยทำให้หน้าเว็บ
   production ยิง auth ไป `http://localhost:3000`) — กันด้วยการ**ไม่ตั้ง `baseURL` ใน `lib/auth-client.ts`**
   (ใช้ path สัมพัทธ์ `/api/auth`) และให้ CI ส่ง build-arg ให้ครบ
+- 🔥 **เลขที่บิลแบบ max+1 เฉย ๆ ชนกันจริงตอนขายพร้อมกัน** — ทดสอบยิง checkout 8 บิลพร้อมกันแล้วผ่านแค่ 5
+  (อีก 3 ตายที่ unique `saleNumber` จนหมด retry) · ทางแก้ที่ใช้จริงคือจับ `pg_advisory_xact_lock` ก่อนอ่าน max
+  ใน `nextSaleNumber()` ของ `app/actions/sales.ts` — lock ปล่อยเองตอน commit จึงได้เลขเรียงต่อเนื่องไม่มีช่องว่าง
+- 🔥 **Prisma deserialize คอลัมน์ชนิด `void` ไม่ได้** — `SELECT pg_advisory_xact_lock(...)` ตรง ๆ พังด้วย
+  `UnsupportedNativeDataType` ต้อง cast เป็น text: `SELECT pg_advisory_xact_lock(${key}::bigint)::text`
+- 🔥 **บัญชี credential ของ Better Auth ใช้ `accountId = user.id` และ `issuer = local:credential`**
+  (ไม่ใช่อีเมล) — insert ตาราง `account` เองด้วยอีเมลจะสร้างได้แต่ล็อกอินไม่ผ่าน ตอบ `INVALID_EMAIL_OR_PASSWORD`
+  เงียบ ๆ · สร้างบัญชีด้วย `pnpm db:create-user` ที่เรียก `internalAdapter` ของ Better Auth เท่านั้น
 - **image `:latest-migrate` ต้อง build จาก stage `migrator` เท่านั้น** — stage `deps` ไม่มี `prisma/`
   ทำให้ `prisma migrate deploy` ฟ้อง "Could not find Prisma Schema" แล้ว deploy "สำเร็จ" ทั้งที่ DB ไม่มีตาราง
 
 ## สถานะการพัฒนา
 
-**✅ Phase 1 (Foundation) และ Phase 2 (Core Features) ปิดครบแล้ว** — checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสอง Phase
+**✅ Phase 1 (Foundation), Phase 2 (Core Features) และ Phase 2.5 (POS Module) ปิดครบแล้ว** —
+checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสาม Phase
 
 ของที่ใช้งานได้จริงตอนนี้:
 - Auth ครบวงจร: สมัคร / เข้าสู่ระบบ / ลืมรหัสผ่าน / ตั้งรหัสผ่านใหม่ / เปลี่ยนรหัสผ่าน + `proxy.ts` กันทุกหน้า
 - คลังสินค้า: CRUD สินค้า (SKU auto-gen), รับเข้า, เบิกจ่าย (กันเบิกเกินแบบ concurrent), Dashboard,
   แจ้งเตือนใกล้หมด + badge, รายงาน 30 วัน, ผู้ใช้งาน, ตั้งค่าโปรไฟล์
+- **MJD Mobile Order**: ผังโต๊ะ `/mobile-order/tables` (เปิด/รวม/ยกเลิกโต๊ะ + เวลาเปิดโต๊ะคำนวณสด),
+  `/mobile-order/notifications`, `/mobile-order/kitchen` (KDS 3 คอลัมน์), `/mobile-order/qr-codes`,
+  `/mobile-order/tables/[tableId]` (ยกเลิกรายการได้เฉพาะที่ครัวยังไม่เริ่มทำ) และฝั่งลูกค้า `/order/[qrToken]/*`
+  (เมนู → ปรับแต่ง → ตะกร้า → ยืนยัน → ติดตามสถานะ → เรียกพนักงาน/เช็กบิล)
+- **POS หน้าร้าน**: หน้า `/pos` (ค้นหา/บาร์โค้ด + ตะกร้า + ส่วนลด + ชำระเงิน CASH/TRANSFER/QR + ใบเสร็จพิมพ์ได้),
+  `/pos/history` (กรองวันที่/สถานะ + void พร้อมเหตุผล), `/pos/closing` (ปิดยอดวันละครั้ง/คน + ส่วนต่างเงินสด),
+  `/categories` (หมวดหมู่เป็น master data — `Product.categoryId` เป็น FK แล้ว ไม่ใช่ข้อความอิสระ)
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
-  seed ไว้ 7 รายการ SKU-1001…SKU-1007
+  seed ไว้ 7 รายการ SKU-1001…SKU-1007 + บิลตัวอย่าง 8 บิล
 
-**ยังไม่ได้ทำ**: Phase 2.5 (POS Module) · Phase 6–12 (MJD Mobile Order) ·
+**ยังไม่ได้ทำ**: Phase 10 (ชำระเงิน PromptPay/Card + ปิดบิลอัตโนมัติ) · Phase 11 (LINE) · Phase 12 (แบรนด์ + CRM) ·
 Phase 3–5 ทำไปบางส่วน (ดูด้านล่าง) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
 **✅ deploy ขึ้น production แล้ว (2026-09-02): https://posqr.jayjayservices.com**

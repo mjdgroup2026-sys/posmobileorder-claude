@@ -1,0 +1,332 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { prisma } from "@/lib/prisma"
+import { requireUser } from "@/lib/session"
+import { toNumber } from "@/lib/format"
+import { businessDateOnly, isSameBusinessDay } from "@/lib/day"
+import {
+  saleSchema,
+  voidSaleSchema,
+  parseCartJson,
+  firstIssueMessage,
+  zodToFieldErrors,
+} from "@/lib/validation"
+import type { ActionResult, FieldErrors, ReceiptData, ReceiptLine } from "@/lib/types"
+
+const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
+
+function revalidateSalePages() {
+  revalidatePath("/")
+  revalidatePath("/pos")
+  revalidatePath("/pos/history")
+  revalidatePath("/pos/closing")
+  revalidatePath("/products")
+  revalidatePath("/reports")
+}
+
+/// ยกเลิกทั้งทรานแซคชันพร้อมข้อความไทยที่พร้อมส่งให้ผู้ใช้
+class SaleAbort extends Error {
+  constructor(readonly failure: { error: string; fieldErrors?: FieldErrors }) {
+    super("SALE_ABORT")
+  }
+}
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+/// คีย์ของ advisory lock ที่ใช้กันเลขบิลชนกัน — ค่าคงที่ตัวเดียวทั้งระบบ
+const SALE_NUMBER_LOCK = 720_001
+
+/// เลขบิลถัดไปรูปแบบ INV-000001 (หา max +1 แบบเดียวกับ SKU auto-gen)
+///
+/// ★ ต้องจับ advisory lock ก่อนเสมอ: max+1 เฉย ๆ ทำให้ทรานแซคชันที่วิ่งพร้อมกันอ่านค่า max
+///   เดียวกันแล้วชนที่ unique constraint (พิสูจน์แล้วด้วยเทส "ขายพร้อมกัน 8 บิล" — ผ่านแค่ 5)
+///   lock นี้ปล่อยเองตอน commit/rollback จึงได้เลขเรียงต่อเนื่องไม่มีช่องว่างและไม่ต้อง retry
+/// ⚠️ raw SQL ไม่ผ่าน @@map — ต้องใช้ชื่อตารางจริงในฐาน ("sale") ไม่ใช่ชื่อ model
+type RawClient = {
+  $queryRaw: <T>(query: TemplateStringsArray, ...values: unknown[]) => Promise<T>
+}
+
+async function nextSaleNumber(tx: RawClient): Promise<string> {
+  // cast เป็น text เพราะ Prisma deserialize คอลัมน์ชนิด void ไม่ได้ (UnsupportedNativeDataType)
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${SALE_NUMBER_LOCK}::bigint)::text AS locked`
+
+  const rows = await tx.$queryRaw<{ max: number | null }[]>`
+    SELECT MAX(CAST(SUBSTRING("saleNumber" FROM '^INV-([0-9]+)$') AS INTEGER)) AS max
+    FROM "sale"
+    WHERE "saleNumber" ~ '^INV-[0-9]+$'
+  `
+  const max = rows[0]?.max ?? 0
+  return `INV-${String(max + 1).padStart(6, "0")}`
+}
+
+export async function createSale(formData: FormData): Promise<ActionResult<ReceiptData>> {
+  let user
+  try {
+    user = await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = saleSchema.safeParse({
+    items: parseCartJson(formData.get("items")),
+    discount: formData.get("discount") ?? 0,
+    paymentMethod: formData.get("paymentMethod") ?? "",
+    amountReceived: formData.get("amountReceived") ?? 0,
+    note: formData.get("note") ?? undefined,
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  const { discount, paymentMethod, amountReceived, note } = parsed.data
+
+  // รวมบรรทัดที่เป็นสินค้าเดียวกัน แล้วเรียงตาม productId — เรียงให้ทุกทรานแซคชัน
+  // ล็อกแถวสินค้าในลำดับเดียวกันเสมอ ลดโอกาส deadlock ตอนขายพร้อมกันหลายเครื่อง
+  const merged = new Map<string, number>()
+  for (const item of parsed.data.items) {
+    merged.set(item.productId, (merged.get(item.productId) ?? 0) + item.quantity)
+  }
+  const lines = Array.from(merged, ([productId, quantity]) => ({ productId, quantity })).sort((a, b) =>
+    a.productId.localeCompare(b.productId),
+  )
+
+  // เลขบิลชนกันได้ถ้ามีคนกดชำระพร้อมกัน — เจอ P2002 แล้ว retry ทั้งทรานแซคชันใหม่
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const receipt = await prisma.$transaction(async (tx) => {
+        const products = await tx.product.findMany({
+          where: { id: { in: lines.map((l) => l.productId) } },
+          select: { id: true, sku: true, name: true, unit: true, price: true },
+        })
+        if (products.length !== lines.length) {
+          throw new SaleAbort({ error: "มีสินค้าบางรายการไม่อยู่ในระบบแล้ว กรุณาตรวจสอบตะกร้าอีกครั้ง" })
+        }
+        const byId = new Map(products.map((p) => [p.id, p]))
+
+        const items: ReceiptLine[] = lines.map((line) => {
+          const product = byId.get(line.productId)
+          if (!product) throw new SaleAbort({ error: "มีสินค้าบางรายการไม่อยู่ในระบบแล้ว" })
+          const unitPrice = toNumber(product.price)
+          return {
+            productId: product.id,
+            sku: product.sku,
+            name: product.name,
+            unit: product.unit,
+            quantity: line.quantity,
+            unitPrice,
+            subtotal: round2(unitPrice * line.quantity),
+          }
+        })
+
+        const subtotal = round2(items.reduce((sum, i) => sum + i.subtotal, 0))
+        if (discount > subtotal) {
+          throw new SaleAbort({
+            error: `ส่วนลดเกินยอดรวมของบิล — ยอดรวมคือ ${subtotal.toFixed(2)} บาท`,
+            fieldErrors: { discount: "ส่วนลดต้องไม่เกินยอดรวม" },
+          })
+        }
+
+        const total = round2(subtotal - discount)
+        if (paymentMethod === "CASH" && amountReceived < total) {
+          throw new SaleAbort({
+            error: `เงินที่รับไม่พอ — ต้องชำระ ${total.toFixed(2)} บาท`,
+            fieldErrors: { amountReceived: "จำนวนเงินที่รับต้องไม่น้อยกว่ายอดสุทธิ" },
+          })
+        }
+
+        // โอน/QR ไม่มีการรับเงินสดเกิน — บังคับให้ตรงยอดเสมอ ไม่เชื่อค่าที่ client ส่งมา
+        const received = paymentMethod === "CASH" ? round2(amountReceived) : total
+        const changeDue = paymentMethod === "CASH" ? round2(received - total) : 0
+
+        const saleNumber = await nextSaleNumber(tx)
+
+        const sale = await tx.sale.create({
+          data: {
+            saleNumber,
+            subtotal: subtotal.toFixed(2),
+            discount: discount.toFixed(2),
+            total: total.toFixed(2),
+            paymentMethod,
+            amountReceived: received.toFixed(2),
+            changeDue: changeDue.toFixed(2),
+            note,
+            cashierId: user.id,
+          },
+          select: { id: true, saleNumber: true, createdAt: true },
+        })
+
+        for (const item of items) {
+          // ★ ด่านกันขายเกินสต็อก: updateMany + where quantity gte เป็นด่านเดียวที่กัน race
+          //   condition ได้จริง (กติกาข้อ 4) — ล้มบรรทัดไหนก็ rollback ทั้งบิล ไม่ตัดสต็อกบางส่วน
+          const updated = await tx.product.updateMany({
+            where: { id: item.productId, quantity: { gte: item.quantity } },
+            data: { quantity: { decrement: item.quantity } },
+          })
+          if (updated.count === 0) {
+            const current = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { quantity: true },
+            })
+            throw new SaleAbort({
+              error: `สต็อก ${item.name} ไม่พอขาย — ขาย ${item.quantity} ${item.unit} แต่มีอยู่ ${current?.quantity ?? 0} ${item.unit}`,
+            })
+          }
+
+          await tx.saleItem.create({
+            data: {
+              saleId: sale.id,
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice.toFixed(2),
+              subtotal: item.subtotal.toFixed(2),
+            },
+          })
+
+          await tx.stockTransaction.create({
+            data: {
+              productId: item.productId,
+              type: "OUT",
+              quantity: item.quantity,
+              saleId: sale.id,
+              note: `ขายหน้าร้าน ${sale.saleNumber}`,
+            },
+          })
+        }
+
+        const data: ReceiptData = {
+          id: sale.id,
+          saleNumber: sale.saleNumber,
+          createdAt: sale.createdAt.toISOString(),
+          cashierName: user.name,
+          items,
+          subtotal,
+          discount,
+          total,
+          paymentMethod,
+          amountReceived: received,
+          changeDue,
+          note,
+        }
+        return data
+      })
+
+      revalidateSalePages()
+      return {
+        ok: true,
+        message: `ขายสำเร็จ — บิล ${receipt.saleNumber} ยอดสุทธิ ${receipt.total.toFixed(2)} บาท`,
+        data: receipt,
+      }
+    } catch (error) {
+      if (error instanceof SaleAbort) return { ok: false, ...error.failure }
+      // เลขบิลชนกัน — วนไปออกเลขใหม่ (สต็อกถูก rollback ไปทั้งหมดแล้ว)
+      if ((error as { code?: string }).code === "P2002") continue
+      return { ok: false, error: "บันทึกการขายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+    }
+  }
+
+  return { ok: false, error: "ออกเลขที่บิลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+}
+
+export async function voidSale(formData: FormData): Promise<ActionResult> {
+  let user
+  try {
+    user = await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = voidSaleSchema.safeParse({
+    id: formData.get("id"),
+    reason: formData.get("reason"),
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  const { id, reason } = parsed.data
+
+  try {
+    const saleNumber = await prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          saleNumber: true,
+          status: true,
+          createdAt: true,
+          cashierId: true,
+          items: { select: { productId: true, quantity: true } },
+        },
+      })
+      if (!sale) throw new SaleAbort({ error: "ไม่พบบิลที่ต้องการยกเลิก" })
+      if (sale.status === "VOIDED") throw new SaleAbort({ error: `บิล ${sale.saleNumber} ถูกยกเลิกไปแล้ว` })
+      if (!isSameBusinessDay(sale.createdAt, new Date())) {
+        throw new SaleAbort({
+          error: `ยกเลิกได้เฉพาะบิลที่ขายในวันเดียวกันเท่านั้น — บิล ${sale.saleNumber} ข้ามวันไปแล้ว`,
+        })
+      }
+
+      // ปิดยอดของแคชเชียร์คนนั้นในวันนั้นไปแล้ว ห้าม void ซ้ำ ไม่งั้นตัวเลขที่ปิดไปแล้วคลาดเคลื่อน
+      const closed = await tx.cashierClosing.findUnique({
+        where: {
+          cashierId_closingDate: {
+            cashierId: sale.cashierId,
+            closingDate: businessDateOnly(sale.createdAt),
+          },
+        },
+        select: { id: true },
+      })
+      if (closed) {
+        throw new SaleAbort({ error: `ปิดยอดของวันนี้ไปแล้ว จึงยกเลิกบิล ${sale.saleNumber} ไม่ได้` })
+      }
+
+      // ★ conditional update — กัน race กับผู้ใช้อีกคนที่กด void บิลเดียวกันพร้อมกัน
+      const marked = await tx.sale.updateMany({
+        where: { id: sale.id, status: "COMPLETED" },
+        data: {
+          status: "VOIDED",
+          voidedAt: new Date(),
+          voidedById: user.id,
+          voidReason: reason,
+        },
+      })
+      if (marked.count === 0) throw new SaleAbort({ error: `บิล ${sale.saleNumber} ถูกยกเลิกไปแล้ว` })
+
+      // คืนสต็อกด้วยรายการชดเชย — ห้ามลบ/แก้ StockTransaction(OUT) เดิม (ledger append-only)
+      for (const item of sale.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity } },
+        })
+        await tx.stockTransaction.create({
+          data: {
+            productId: item.productId,
+            type: "IN",
+            quantity: item.quantity,
+            saleId: sale.id,
+            note: `ยกเลิกบิล ${sale.saleNumber}`,
+          },
+        })
+      }
+
+      return sale.saleNumber
+    })
+
+    revalidateSalePages()
+    return { ok: true, message: `ยกเลิกบิล ${saleNumber} และคืนสต็อกเรียบร้อยแล้ว` }
+  } catch (error) {
+    if (error instanceof SaleAbort) return { ok: false, ...error.failure }
+    return { ok: false, error: "ยกเลิกบิลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+}

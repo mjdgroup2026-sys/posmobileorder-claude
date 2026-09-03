@@ -3,17 +3,28 @@ import {
   getDashboardStats,
   getLowStockProducts,
   getRecentTransactions,
+  getRecentSales,
 } from "@/lib/queries"
 import { formatBaht, formatDateTime, formatNumber } from "@/lib/format"
-import { IconArrowIn, IconArrowOut, IconProduct, IconWallet, IconWarning } from "@/components/icons"
+import { PAYMENT_METHOD_LABEL } from "@/lib/types"
+import {
+  IconArrowIn,
+  IconArrowOut,
+  IconPos,
+  IconProduct,
+  IconReceipt,
+  IconWallet,
+  IconWarning,
+} from "@/components/icons"
 
 export const metadata = { title: "ภาพรวม — MJD Mobile Order" }
 
 export default async function DashboardPage() {
-  const [stats, lowStock, recent] = await Promise.all([
+  const [stats, lowStock, recent, recentSales] = await Promise.all([
     getDashboardStats(),
     getLowStockProducts(6),
     getRecentTransactions(8),
+    getRecentSales(6),
   ])
 
   return (
@@ -27,8 +38,11 @@ export default async function DashboardPage() {
           <Link href="/stock-in" className="btn btn-subtle">
             <IconArrowIn size={17} aria-hidden /> รับสินค้าเข้า
           </Link>
-          <Link href="/stock-out" className="btn btn-primary">
+          <Link href="/stock-out" className="btn btn-subtle">
             <IconArrowOut size={17} aria-hidden /> เบิกจ่ายสินค้า
+          </Link>
+          <Link href="/pos" className="btn btn-primary">
+            <IconPos size={17} aria-hidden /> ขายหน้าร้าน
           </Link>
         </div>
       </div>
@@ -36,6 +50,15 @@ export default async function DashboardPage() {
       <section
         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}
       >
+        <article className="stat-tile">
+          <span className="row" style={{ gap: 8, color: "var(--ink-3)" }}>
+            <IconReceipt size={17} aria-hidden />
+            <span className="t-caption">ยอดขายวันนี้</span>
+          </span>
+          <strong className="t-h1 num">฿{formatBaht(stats.todaySalesTotal)}</strong>
+          <span className="t-caption num">{formatNumber(stats.todayBillCount)} บิลวันนี้</span>
+        </article>
+
         <article className="stat-tile">
           <span className="row" style={{ gap: 8, color: "var(--ink-3)" }}>
             <IconProduct size={17} aria-hidden />
@@ -106,6 +129,63 @@ export default async function DashboardPage() {
           </ul>
         </section>
       ) : null}
+
+      <section className="card-ui">
+        <div className="panel-head">
+          <h2 className="t-h2">บิลขายล่าสุด</h2>
+          <Link href="/pos/history" className="btn btn-ghost btn-sm">
+            ดูประวัติการขาย
+          </Link>
+        </div>
+
+        {recentSales.length === 0 ? (
+          <p className="t-body" style={{ padding: 24 }}>
+            ยังไม่มีบิลขาย — เปิดหน้าขายหน้าร้านเพื่อเริ่มบิลแรก
+          </p>
+        ) : (
+          <ul style={{ display: "flex", flexDirection: "column" }}>
+            {recentSales.map((sale) => (
+              <li
+                key={sale.id}
+                className="row"
+                style={{
+                  justifyContent: "space-between",
+                  padding: "12px 24px",
+                  borderTop: "1px solid var(--line)",
+                }}
+              >
+                <span className="row" style={{ gap: 10 }}>
+                  <span className={`chip ${sale.status === "COMPLETED" ? "chip-success" : "chip-danger"}`}>
+                    <span className="dot" />
+                    {sale.status === "COMPLETED" ? "สำเร็จ" : "ยกเลิกแล้ว"}
+                  </span>
+                  <span>
+                    <span className="num" style={{ fontWeight: 600 }}>
+                      {sale.saleNumber}
+                    </span>{" "}
+                    <span className="t-caption">
+                      {sale.cashierName} · {formatNumber(sale.itemCount)} รายการ ·{" "}
+                      {PAYMENT_METHOD_LABEL[sale.paymentMethod]}
+                    </span>
+                  </span>
+                </span>
+                <span className="row" style={{ gap: 14 }}>
+                  <span
+                    className="num"
+                    style={{
+                      fontWeight: 600,
+                      textDecoration: sale.status === "VOIDED" ? "line-through" : undefined,
+                    }}
+                  >
+                    ฿{formatBaht(sale.total)}
+                  </span>
+                  <span className="t-caption num">{formatDateTime(sale.createdAt)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="card-ui">
         <div className="panel-head">

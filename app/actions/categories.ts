@@ -1,0 +1,124 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { prisma } from "@/lib/prisma"
+import { requireUser } from "@/lib/session"
+import { categorySchema, idSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
+import type { ActionResult } from "@/lib/types"
+
+const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
+
+function revalidateCategoryPages() {
+  revalidatePath("/categories")
+  revalidatePath("/products")
+  revalidatePath("/pos")
+}
+
+export async function createCategory(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = categorySchema.safeParse({ name: formData.get("name") })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  try {
+    await prisma.category.create({ data: { name: parsed.data.name } })
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      return {
+        ok: false,
+        error: `หมวดหมู่ “${parsed.data.name}” มีอยู่แล้ว`,
+        fieldErrors: { name: "ชื่อหมวดหมู่นี้ซ้ำกับที่มีอยู่" },
+      }
+    }
+    return { ok: false, error: "เพิ่มหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateCategoryPages()
+  return { ok: true, message: `เพิ่มหมวดหมู่ ${parsed.data.name} เรียบร้อยแล้ว` }
+}
+
+export async function updateCategory(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const identity = idSchema.safeParse({ id: formData.get("id") })
+  if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }
+
+  const parsed = categorySchema.safeParse({ name: formData.get("name") })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  try {
+    await prisma.category.update({
+      where: { id: identity.data.id },
+      data: { name: parsed.data.name },
+    })
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code === "P2002") {
+      return {
+        ok: false,
+        error: `หมวดหมู่ “${parsed.data.name}” มีอยู่แล้ว`,
+        fieldErrors: { name: "ชื่อหมวดหมู่นี้ซ้ำกับที่มีอยู่" },
+      }
+    }
+    if (code === "P2025") return { ok: false, error: "ไม่พบหมวดหมู่ที่ต้องการแก้ไข" }
+    return { ok: false, error: "แก้ไขหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateCategoryPages()
+  return { ok: true, message: `แก้ไขหมวดหมู่เป็น ${parsed.data.name} เรียบร้อยแล้ว` }
+}
+
+export async function deleteCategory(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const identity = idSchema.safeParse({ id: formData.get("id") })
+  if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }
+
+  try {
+    // นับสินค้าที่ผูกอยู่ก่อน เพื่อบอกจำนวนให้ผู้ใช้ได้ชัด ๆ — FK ที่ฐานเป็นด่านจริงอีกชั้น
+    const linked = await prisma.product.count({ where: { categoryId: identity.data.id } })
+    if (linked > 0) {
+      return {
+        ok: false,
+        error: `ลบไม่ได้ — ยังมีสินค้า ${linked} รายการผูกอยู่กับหมวดหมู่นี้ กรุณาย้ายสินค้าไปหมวดหมู่อื่นก่อน`,
+      }
+    }
+
+    await prisma.category.delete({ where: { id: identity.data.id } })
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code === "P2025") return { ok: false, error: "ไม่พบหมวดหมู่ที่ต้องการลบ" }
+    // P2003 = FK violation — มีสินค้าถูกผูกเข้ามาระหว่างที่เพิ่งนับเสร็จ (race)
+    if (code === "P2003") {
+      return { ok: false, error: "ลบไม่ได้ — ยังมีสินค้าผูกอยู่กับหมวดหมู่นี้" }
+    }
+    return { ok: false, error: "ลบหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateCategoryPages()
+  return { ok: true, message: "ลบหมวดหมู่เรียบร้อยแล้ว" }
+}

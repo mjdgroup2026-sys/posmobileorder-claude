@@ -1,0 +1,104 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { prisma } from "@/lib/prisma"
+import { requireUser } from "@/lib/session"
+import { businessDateOnly, businessDayRange } from "@/lib/day"
+import { closingSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
+import { toNumber } from "@/lib/format"
+import type { ActionResult } from "@/lib/types"
+
+const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+/// ปิดยอดประจำวัน — 1 ครั้ง/แคชเชียร์/วัน (unique cashierId+closingDate เป็นด่านจริง)
+/// ยอดทั้งหมดคำนวณสดจาก Sale ในทรานแซคชันเดียวกัน ไม่รับตัวเลขสรุปจากฝั่ง client
+export async function closeCashierDay(formData: FormData): Promise<ActionResult> {
+  let user
+  try {
+    user = await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = closingSchema.safeParse({
+    countedCash: formData.get("countedCash"),
+    note: formData.get("note") ?? undefined,
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: firstIssueMessage(parsed.error),
+      fieldErrors: zodToFieldErrors(parsed.error),
+    }
+  }
+
+  const { countedCash, note } = parsed.data
+  const { start, end } = businessDayRange()
+
+  try {
+    const difference = await prisma.$transaction(async (tx) => {
+      const [completed, voidedCount] = await Promise.all([
+        tx.sale.findMany({
+          where: { cashierId: user.id, status: "COMPLETED", createdAt: { gte: start, lt: end } },
+          select: { total: true, paymentMethod: true },
+        }),
+        tx.sale.count({
+          where: { cashierId: user.id, status: "VOIDED", voidedAt: { gte: start, lt: end } },
+        }),
+      ])
+
+      let totalSales = 0
+      let totalCash = 0
+      let totalTransfer = 0
+      let totalQR = 0
+      for (const sale of completed) {
+        const value = toNumber(sale.total)
+        totalSales += value
+        if (sale.paymentMethod === "CASH") totalCash += value
+        else if (sale.paymentMethod === "TRANSFER") totalTransfer += value
+        else totalQR += value
+      }
+
+      const gap = round2(countedCash - round2(totalCash))
+
+      await tx.cashierClosing.create({
+        data: {
+          cashierId: user.id,
+          closingDate: businessDateOnly(),
+          totalSales: round2(totalSales).toFixed(2),
+          totalCash: round2(totalCash).toFixed(2),
+          totalTransfer: round2(totalTransfer).toFixed(2),
+          totalQR: round2(totalQR).toFixed(2),
+          billCount: completed.length,
+          voidedCount,
+          countedCash: round2(countedCash).toFixed(2),
+          difference: gap.toFixed(2),
+          note,
+        },
+      })
+
+      return gap
+    })
+
+    revalidatePath("/pos/closing")
+    revalidatePath("/pos/history")
+
+    const verdict =
+      difference === 0
+        ? "เงินสดตรงพอดี"
+        : difference > 0
+          ? `เงินเกิน ${difference.toFixed(2)} บาท`
+          : `เงินขาด ${Math.abs(difference).toFixed(2)} บาท`
+
+    return { ok: true, message: `ปิดยอดประจำวันเรียบร้อยแล้ว — ${verdict}` }
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      return { ok: false, error: "ปิดยอดของวันนี้ไปแล้ว — ปิดซ้ำวันเดิมไม่ได้" }
+    }
+    return { ok: false, error: "ปิดยอดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+}

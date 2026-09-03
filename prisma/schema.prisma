@@ -17,11 +17,22 @@ enum TransactionType {
   OUT
 }
 
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  QR
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
 model Product {
   id           String   @id @default(cuid())
   sku          String   @unique
   name         String
-  category     String
+  categoryId   String
   unit         String
   quantity     Int      @default(0)
   reorderPoint Int      @default(0)
@@ -29,10 +40,12 @@ model Product {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  category     Category           @relation(fields: [categoryId], references: [id])
   transactions StockTransaction[]
+  saleItems    SaleItem[]
 
   @@index([name])
-  @@index([category])
+  @@index([categoryId])
   @@map("product")
 }
 
@@ -43,12 +56,15 @@ model StockTransaction {
   type      TransactionType
   quantity  Int
   note      String?
+  saleId    String?
   createdAt DateTime        @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale    Sale?   @relation(fields: [saleId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([createdAt])
+  @@index([saleId])
   @@map("stock_transaction")
 }
 
@@ -63,8 +79,15 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions Session[]
-  accounts Account[]
+  sessions                  Session[]
+  accounts                  Account[]
+  sales                     Sale[]            @relation("SaleCashier")
+  voided                    Sale[]            @relation("SaleVoidedBy")
+  closedSessions            TableSession[]    @relation("SessionClosedBy")
+  cancelledOrderItems       MobileOrderItem[] @relation("OrderItemCancelledBy")
+  acknowledgedNotifications Notification[]    @relation("NotificationAckBy")
+  storeSettingsUpdates      StoreSettings[]   @relation("StoreSettingsUpdatedBy")
+  closings                  CashierClosing[]
 
   @@map("user")
 }
@@ -118,4 +141,388 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+// ───────────────────────────── POS หน้าร้าน (Phase 2.5) ─────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@map("category")
+}
+
+model Sale {
+  id             String        @id @default(cuid())
+  saleNumber     String        @unique
+  status         SaleStatus    @default(COMPLETED)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  discount       Decimal       @default(0) @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  paymentMethod  PaymentMethod
+  amountReceived Decimal       @db.Decimal(12, 2)
+  changeDue      Decimal       @default(0) @db.Decimal(12, 2)
+  note           String?
+  channel        SaleChannel   @default(RETAIL_POS)
+  tableSessionId String?       @unique
+  cashierId      String
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
+  createdAt      DateTime      @default(now())
+
+  cashier      User                    @relation("SaleCashier", fields: [cashierId], references: [id])
+  session      TableSession?           @relation(fields: [tableSessionId], references: [id])
+  pointTx      MemberPointTransaction?
+  voidedBy     User?                   @relation("SaleVoidedBy", fields: [voidedById], references: [id])
+  items        SaleItem[]
+  transactions StockTransaction[]
+
+  @@index([createdAt])
+  @@index([cashierId])
+  @@index([status])
+  @@index([channel])
+  @@map("sale")
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_item")
+}
+
+/// บันทึกปิดยอดประจำวัน — immutable แก้/ลบผ่าน UI ไม่ได้
+model CashierClosing {
+  id            String   @id @default(cuid())
+  cashierId     String
+  closingDate   DateTime @db.Date
+  totalSales    Decimal  @db.Decimal(12, 2)
+  totalCash     Decimal  @db.Decimal(12, 2)
+  totalTransfer Decimal  @db.Decimal(12, 2)
+  totalQR       Decimal  @db.Decimal(12, 2)
+  billCount     Int      @default(0)
+  voidedCount   Int      @default(0)
+  countedCash   Decimal  @db.Decimal(12, 2)
+  difference    Decimal  @db.Decimal(12, 2)
+  note          String?
+  closedAt      DateTime @default(now())
+
+  cashier User @relation(fields: [cashierId], references: [id])
+
+  @@unique([cashierId, closingDate])
+  @@index([closingDate])
+  @@map("cashier_closing")
+}
+
+// ───────────────────── MJD Mobile Order (Phase 6) ─────────────────────
+
+enum SaleChannel {
+  RETAIL_POS
+  MOBILE_ORDER
+}
+
+enum TableStatus {
+  EMPTY
+  OPEN_NO_ORDER
+  ORDERED
+  AWAITING_BILL
+  OCCUPIED_MERGED
+}
+
+enum TableSessionStatus {
+  OPEN
+  AWAITING_BILL
+  CLOSED
+  CANCELLED
+}
+
+enum OrderItemStatus {
+  AWAITING_KITCHEN
+  COOKING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum QRCodeType {
+  STATIC
+  DYNAMIC
+}
+
+enum QRCodeStatus {
+  ACTIVE
+  INVALIDATED
+}
+
+enum NotificationType {
+  CALL_STAFF
+  CHECK_BILL
+}
+
+enum NotificationStatus {
+  PENDING
+  ACKNOWLEDGED
+}
+
+enum LineNotificationType {
+  ORDER_CONFIRMED
+  FOOD_READY
+  PAYMENT_SUCCESS
+}
+
+enum ModifierSelectionType {
+  SINGLE
+  MULTIPLE
+}
+
+/// โต๊ะในร้าน — ชื่อตารางในฐานเป็น restaurant_table เพราะ table เป็นคำสงวนของ SQL
+/// (เขียน raw SQL ทีไรต้องคอย quote ตลอด พลาดแล้ว tsc จับไม่ได้ ไปพังตอน runtime)
+model Table {
+  id             String      @id @default(cuid())
+  code           String      @unique
+  /// denormalized — ต้องอัปเดตใน transaction เดียวกับเหตุการณ์เสมอ (เหมือน Product.quantity คู่กับ StockTransaction)
+  status         TableStatus @default(EMPTY)
+  primaryTableId String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  primaryTable Table?         @relation("TableMerge", fields: [primaryTableId], references: [id])
+  mergedTables Table[]        @relation("TableMerge")
+  sessions     TableSession[]
+  qrCodes      QRCode[]
+
+  @@index([status])
+  @@index([primaryTableId])
+  @@map("restaurant_table")
+}
+
+model TableSession {
+  id           String             @id @default(cuid())
+  tableId      String
+  qrCodeId     String?
+  openedAt     DateTime           @default(now())
+  status       TableSessionStatus @default(OPEN)
+  closedAt     DateTime?
+  closedById   String?
+  cancelReason String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  table         Table                 @relation(fields: [tableId], references: [id])
+  qrCode        QRCode?               @relation(fields: [qrCodeId], references: [id])
+  closedBy      User?                 @relation("SessionClosedBy", fields: [closedById], references: [id])
+  orders        MobileOrder[]
+  notifications Notification[]
+  lineLogs      LineNotificationLog[]
+  /// บิลที่เกิดตอนปิด session — FK อยู่ฝั่ง Sale (Sale.tableSessionId) ด้านเดียว
+  /// ไม่เก็บ saleId ซ้ำที่นี่ เพราะ FK ชี้กันไปมาสองทางทำให้ลำดับการเขียนในทรานแซคชันพันกัน
+  sale          Sale?
+
+  @@index([tableId])
+  @@index([status])
+  @@map("table_session")
+}
+
+model MenuItem {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  price             Decimal  @db.Decimal(12, 2)
+  imageUrl          String?
+  isActive          Boolean  @default(true)
+  /// ปักหมุดได้สูงสุด 6 รายการพร้อมกัน — บังคับที่ server action (F21)
+  isFeatured        Boolean  @default(false)
+  featuredSortOrder Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  modifierGroups ModifierGroup[]
+  orderItems     MobileOrderItem[]
+
+  @@index([isActive])
+  @@index([isFeatured])
+  @@map("menu_item")
+}
+
+model ModifierGroup {
+  id            String                @id @default(cuid())
+  menuItemId    String
+  name          String
+  selectionType ModifierSelectionType @default(SINGLE)
+  required      Boolean               @default(false)
+  sortOrder     Int                   @default(0)
+
+  menuItem MenuItem         @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  options  ModifierOption[]
+
+  @@index([menuItemId])
+  @@map("modifier_group")
+}
+
+model ModifierOption {
+  id              String  @id @default(cuid())
+  modifierGroupId String
+  name            String
+  priceDelta      Decimal @default(0) @db.Decimal(12, 2)
+  sortOrder       Int     @default(0)
+
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@index([modifierGroupId])
+  @@map("modifier_option")
+}
+
+model MobileOrder {
+  id             String    @id @default(cuid())
+  tableSessionId String
+  /// เลขรอบสั่งภายใน session เดียวกัน (1, 2, 3, …) ใช้แยกทิกเก็ตครัว
+  orderNumber    Int
+  submittedAt    DateTime  @default(now())
+  printedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  session TableSession      @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  items   MobileOrderItem[]
+
+  @@unique([tableSessionId, orderNumber])
+  @@index([tableSessionId])
+  @@map("mobile_order")
+}
+
+model MobileOrderItem {
+  id                      String          @id @default(cuid())
+  mobileOrderId           String
+  menuItemId              String
+  quantity                Int
+  /// snapshot รวม modifier ณ เวลาสั่ง — เหมือน SaleItem.unitPrice กันแก้ราคาเมนูย้อนหลังแล้วบิลเก่าเพี้ยน
+  unitPrice               Decimal         @db.Decimal(12, 2)
+  /// [{ groupName, optionName, priceDelta }] — snapshot ด้วยเหตุผลเดียวกับ unitPrice
+  selectedOptionsSnapshot Json            @default("[]")
+  note                    String?
+  status                  OrderItemStatus @default(AWAITING_KITCHEN)
+  cancelledAt             DateTime?
+  cancelledById           String?
+  cancelReason            String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  order       MobileOrder @relation(fields: [mobileOrderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id])
+  cancelledBy User?       @relation("OrderItemCancelledBy", fields: [cancelledById], references: [id])
+
+  @@index([mobileOrderId])
+  @@index([status])
+  @@map("mobile_order_item")
+}
+
+model QRCode {
+  id            String       @id @default(cuid())
+  tableId       String
+  type          QRCodeType   @default(STATIC)
+  /// ค่าสุ่มที่ฝังใน URL ลูกค้า — ห้ามใช้ tableId ตรง ๆ กันเดา URL
+  token         String       @unique
+  status        QRCodeStatus @default(ACTIVE)
+  invalidatedAt DateTime?
+  issuedAt      DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+
+  table    Table          @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  sessions TableSession[]
+
+  @@index([tableId])
+  @@index([status])
+  @@map("qr_code")
+}
+
+model Notification {
+  id               String             @id @default(cuid())
+  tableSessionId   String
+  type             NotificationType
+  reason           String?
+  status           NotificationStatus @default(PENDING)
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  createdAt        DateTime           @default(now())
+
+  session        TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("NotificationAckBy", fields: [acknowledgedById], references: [id])
+
+  @@index([tableSessionId])
+  @@index([status])
+  @@map("notification")
+}
+
+model LineNotificationLog {
+  id             String               @id @default(cuid())
+  tableSessionId String
+  type           LineNotificationType
+  lineUserId     String?
+  sentAt         DateTime             @default(now())
+  success        Boolean
+  errorMessage   String?
+
+  session TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+
+  @@index([tableSessionId])
+  @@map("line_notification_log")
+}
+
+/// singleton — มีแถวเดียวเสมอ (id = "default")
+model StoreSettings {
+  id                   String   @id @default("default")
+  storeName            String
+  logoUrl              String?
+  coverImageUrl        String?
+  themeColor           String
+  /// ห้ามสลับขณะมี TableSession.status = OPEN อยู่อย่างน้อย 1 โต๊ะ (บังคับที่ updateStoreSettings)
+  hasKDS               Boolean  @default(false)
+  serviceChargePercent Decimal  @default(0) @db.Decimal(5, 2)
+  crmEnabled           Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+  updatedById          String?
+
+  updatedBy User? @relation("StoreSettingsUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("store_settings")
+}
+
+model Member {
+  id           String   @id @default(cuid())
+  phone        String   @unique
+  /// denormalized — อัปเดตคู่กับ MemberPointTransaction ใน transaction เดียวกันเสมอ
+  pointBalance Int      @default(0)
+  lineUserId   String?
+  createdAt    DateTime @default(now())
+
+  pointTransactions MemberPointTransaction[]
+
+  @@map("member")
+}
+
+model MemberPointTransaction {
+  id        String   @id @default(cuid())
+  memberId  String
+  saleId    String   @unique
+  points    Int
+  createdAt DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  sale   Sale   @relation(fields: [saleId], references: [id])
+
+  @@index([memberId])
+  @@map("member_point_transaction")
 }

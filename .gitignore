@@ -46,3 +46,6 @@ next-env.d.ts
 
 # MCP — มี credential ห้าม commit (คัดลอกจาก .mcp.json.example แล้วเติมรหัสผ่านเอง)
 .mcp.json
+
+# อาร์ตบอร์ดที่แตกออกจาก mobile-order.html ด้วย extract-design.mjs (ต้นฉบับอยู่ใน git อยู่แล้ว)
+/design-src/

@@ -5,7 +5,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth-client"
-import { IconLogout, IconSettings, IconUser, IconWarning } from "@/components/icons"
+import { IconBell, IconLogout, IconSettings, IconUser, IconWarning } from "@/components/icons"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,9 +18,10 @@ import {
 type Props = {
   user: { name: string; email: string }
   lowStockCount: number
+  pendingNotificationCount?: number
 }
 
-export function Topbar({ user, lowStockCount }: Props) {
+export function Topbar({ user, lowStockCount, pendingNotificationCount = 0 }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
 
@@ -34,7 +35,13 @@ export function Topbar({ user, lowStockCount }: Props) {
 
   return (
     <header className="topbar">
-      <div className="row">
+      <div className="row" style={{ gap: 10 }}>
+        {pendingNotificationCount > 0 ? (
+          <Link href="/mobile-order/notifications" className="chip chip-danger">
+            <IconBell size={14} aria-hidden />
+            ลูกค้าเรียก <span className="num">{pendingNotificationCount}</span> โต๊ะ
+          </Link>
+        ) : null}
         {lowStockCount > 0 ? (
           <Link href="/products?filter=low" className="chip chip-warning">
             <IconWarning size={14} aria-hidden />

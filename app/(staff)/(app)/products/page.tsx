@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { listProducts, listCategories } from "@/lib/queries"
+import { listProducts, listCategoryOptions } from "@/lib/queries"
 import { ProductManager } from "@/components/product-manager"
 
 export const metadata = { title: "สินค้า" }
@@ -12,7 +12,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
 
   const [allProducts, categories] = await Promise.all([
     listProducts({ search, category }),
-    listCategories(),
+    listCategoryOptions(),
   ])
 
   const products = onlyLow ? allProducts.filter((p) => p.isLow) : allProducts
