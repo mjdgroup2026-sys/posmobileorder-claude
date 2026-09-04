@@ -311,8 +311,11 @@ CI/CD อัตโนมัติจาก `main` ทำงานจริง �
 | health alert | ✅ cron ทำงาน + **ส่งอีเมลจริงผ่านครบทั้งสองทิศทาง** (ปกติ→ล่ม, ล่ม→ปกติ) |
 | อีเมลจริง | ✅ `.env` บน server มี `RESEND_API_KEY`/`MAIL_FROM` แล้ว · ยิง Resend ตรง ๆ ได้ 200 + message id |
 
-> ⚠️ `ALERT_EMAIL` ยังเป็น `delivered@resend.dev` (ที่อยู่ทดสอบของ Resend ที่กลืนอีเมลทิ้ง)
-> **ต้องเปลี่ยนเป็นกล่องจดหมายจริงของผู้ดูแล** ไม่งั้นเวลา service ล่มจริงจะไม่มีใครรู้
+> ⚠️ `ALERT_EMAIL` ต้องเป็นกล่องจดหมายที่ **รับอีเมลขาเข้าได้จริง** — `mail.jayjayservices.com`
+> และ `jayjayservices.com` **ไม่มี MX เลย** (ตั้งไว้ส่งออกอย่างเดียว: SPF/DKIM ของ Resend +
+> MX ที่ `send.mail.` ไว้รับ bounce ให้ Amazon SES) การตั้งเป็น `no-reply@` ของโดเมนตัวเอง
+> จะทำให้อีเมลแจ้งเตือน hard-bounce ทุกฉบับ = service ล่มแล้วไม่มีใครรู้
+> · `MAIL_FROM` (ผู้ส่ง) กับ `ALERT_EMAIL` (ผู้รับ) เป็นคนละบทบาทกัน อย่าสลับกัน
 
 > 🐞 **กับดักที่เจอจริง**: host ของ VPS **ไม่มี `node`** (อยู่แต่ในคอนเทนเนอร์ของแอป) `json_str()`
 > ใน `ops/lib-common.sh` จึงตกไปใช้ fallback sed เสมอ — ของเดิมใช้ `s/$/\\n/` ที่ sed มองว่า
