@@ -781,10 +781,11 @@ enum ResourceKey {
 - [x] DYNAMIC QR ของโต๊ะนั้นถูก invalidate ทันที; STATIC QR ไม่ถูกแตะต้อง
 
 ### F18 — Kitchen Display System (KDS) + fallback ไม่มี KDS
-- [ ] KDS แสดงทิกเก็ต 3 คอลัมน์ (ใหม่/กำลังปรุง/พร้อมเสิร์ฟ) พร้อมตัวนับเวลาที่ผ่านไปต่อทิกเก็ต
-- [ ] กด "เริ่มทำ"/"เสร็จ" เปลี่ยนสถานะ real-time กลับไปที่ POS ทันที
-- [ ] ร้านที่ `hasKDS = false` ไม่มีหน้านี้เลย — สถานะจัดการทั้งหมดจากหน้ารายละเอียดออร์เดอร์โต๊ะ (F13) แทน
-- [ ] ทิกเก็ตพิมพ์ไปเครื่องพิมพ์ครัว/POS ทันทีที่ออร์เดอร์เข้า ไม่ว่าร้านจะมี KDS หรือไม่ (พิมพ์กับ KDS ทำงาน
+- [x] KDS แสดงทิกเก็ต 3 คอลัมน์ (ใหม่/กำลังปรุง/พร้อมเสิร์ฟ) พร้อมตัวนับเวลาที่ผ่านไปต่อทิกเก็ต
+- [x] กด "เริ่มทำ"/"เสร็จ" เปลี่ยนสถานะกลับไปที่ POS (ผ่าน auto-refresh 10 วิ บน KDS / 15 วิ บนผังโต๊ะ)
+- [x] ร้านที่ `hasKDS = false` ไม่มีหน้านี้เลย — สถานะจัดการทั้งหมดจากหน้ารายละเอียดออร์เดอร์โต๊ะ (F13) แทน
+- [x] ทิกเก็ตพิมพ์ได้ทันทีที่ออร์เดอร์เข้า ไม่ว่าร้านจะมี KDS หรือไม่ (ปุ่มทิกเก็ต PDF อยู่ทั้งบน KDS
+      และหน้ารายละเอียดโต๊ะ — พิมพ์กับ KDS ทำงานคู่ขนานกัน ไม่ใช่ทางเลือกแทนกัน)
       คู่ขนานกันได้ ไม่ใช่ทางเลือกแทนกัน)
 
 ### F19 — แจ้งเตือนผ่าน LINE
@@ -797,18 +798,22 @@ enum ResourceKey {
 - [x] DYNAMIC ที่ invalidate แล้ว มีปุ่ม "พิมพ์ใบใหม่" สร้าง token ใหม่ทันที
 
 ### F21 — POS Manager: ตั้งค่าธีม/แบรนด์/เมนูเด่น
-- [ ] แก้ไข cover/logo/สีธีม/ชื่อร้านผ่านหน้าเว็บได้ ไม่ต้องแก้โค้ด — สีธีมมีผลเฉพาะ route group
+- [x] แก้ไข cover/logo/สีธีม/ชื่อร้านผ่านหน้าเว็บได้ ไม่ต้องแก้โค้ด — สีธีมมีผลเฉพาะ route group
       `(customer)` โดย override `--brand` เป็น inline style บน `<body>` (ไม่ generate CSS ต่อร้าน)
-- [ ] จัดลำดับ/ปักหมุดเมนูแนะนำสูงสุด 6 รายการ (validation ปฏิเสธรายการที่ 7)
-- [ ] สลับ `hasKDS` ได้ — **ปฏิเสธการสลับถ้ามี `TableSession` ที่ `status = OPEN` อยู่อย่างน้อย 1 โต๊ะ**
+      > สีถูกบังคับเป็น hex 6 หลักด้วย zod ก่อนลง inline style · ลิงก์รูปรับเฉพาะ http/https หรือ path
+      > ภายในเว็บ (กัน `javascript:` และ `data:`)
+      `(customer)` โดย override `--brand` เป็น inline style บน `<body>` (ไม่ generate CSS ต่อร้าน)
+- [x] จัดลำดับ/ปักหมุดเมนูแนะนำสูงสุด 6 รายการ (validation ปฏิเสธรายการที่ 7 ที่ server ไม่ใช่แค่ปิดปุ่มบน UI)
+- [x] สลับ `hasKDS` ได้ — **ปฏิเสธการสลับถ้ามี `TableSession` ที่เปิดอยู่อย่างน้อย 1 โต๊ะ**
+      (เช็คในทรานแซคชันเดียวกับการเขียน ไม่ใช่เช็คก่อนแล้วค่อยเขียน)
 
 ### F22 — สมัครสมาชิก & สะสมแต้ม (CRM/Membership MVP)
 > ⛔ **การใช้แต้มแลกส่วนลด/ของรางวัล (redemption), ระดับสมาชิก/tier, ระบบข้ามสาขา (multi-branch) อยู่นอกขอบเขต
 > v1** — พิมพ์เขียวสำหรับเฟสถัดไป (ดู [§7 Out of Scope](#7-out-of-scope-v1))
 
-- [ ] สมัครด้วยเบอร์โทรบนหน้า payment-success ได้ทันที ไม่ต้อง scan ใบเสร็จภายหลัง
-- [ ] ได้แต้มทันทีตามยอดบิล แสดงยอดแต้มสะสมปัจจุบันให้เห็นทันที
-- [ ] เบอร์เดิมสมัครซ้ำ = เข้าบัญชีเดิม ไม่สร้างซ้ำ
+- [x] สมัครด้วยเบอร์โทรบนหน้า payment-success ได้ทันที ไม่ต้อง scan ใบเสร็จภายหลัง
+- [x] ได้แต้มทันทีตามยอดบิล แสดงยอดแต้มสะสมปัจจุบันให้เห็นทันที (1 แต้ม/25 บาท ปัดลง — `lib/points.ts`)
+- [x] เบอร์เดิมสมัครซ้ำ = เข้าบัญชีเดิม ไม่สร้างซ้ำ (เบอร์ถูก normalize เป็นตัวเลขล้วนก่อนเทียบ unique)
 
 ---
 
@@ -1090,6 +1095,8 @@ enum ResourceKey {
 นำขึ้น production พร้อมความปลอดภัยและการดูแล
 
 - [ ] Deploy บน VPS Ubuntu: SSH hardening (ปิด password login, key-only), สร้าง user ไม่ใช่ root
+      > 🔧 `ops/setup-vps.sh` ทำครบทั้ง user `deploy` + fail2ban + drop-in `01-hardening.conf` แล้ว
+      > **แต่ยังไม่เคยรันบน VPS** — ต้องรันด้วยมือพร้อม public key จริง (พลาดแล้วล็อกตัวเองออกจากเครื่องได้)
       — ใช้ user `deploy` (ไม่ใช่ root) · เปิด fail2ban ให้ `active` · รัน `harden-ssh.sh`
       เกณฑ์ผ่าน (ตรวจจากภายนอก): ต่อด้วย password → `Permission denied (publickey)` และเข้าด้วย key ได้ปกติ
       > กับดัก: แก้ `PasswordAuthentication` ใน `/etc/ssh/sshd_config` เฉย ๆ **ไม่มีผล** เพราะ Ubuntu
@@ -1097,6 +1104,8 @@ enum ResourceKey {
       > ไฟล์ `60-cloudimg-settings.conf` ของผู้ให้บริการจึงชนะเสมอ ต้องวางไฟล์ที่เรียงมาก่อน
       > (`01-hardening.conf`) หรือปิดบรรทัดในไฟล์นั้นด้วย
 - [ ] UFW firewall (เปิดเฉพาะ 22/80/443) — `ufw` ต้องมีสถานะ `active/enabled` และตรวจจากภายนอกแล้ว
+      > 🔧 อยู่ในขั้นที่ 4 ของ `ops/setup-vps.sh` แล้ว · **รันพร้อมกับ SSH hardening ข้างบน**
+      > พอร์ตของแอปทั้งสองสีผูกกับ 127.0.0.1 อยู่แล้ว จึงไม่ทะลุ UFW ผ่าน iptables ของ Docker
       ต้องเปิดเฉพาะ 22/80/443 จริง (3000 และ 5432 ต้องปิด)
       > ⚠️ Docker เขียน iptables เองจึง **ทะลุกฎ UFW** ได้: พอร์ตที่ `ports:` ประกาศไว้จะเปิดออกเน็ต
       > แม้ UFW จะ deny — ต้องผูกเป็น `127.0.0.1:3000:3000` ใน `docker-compose.prod.yml` เสมอ
@@ -1106,6 +1115,11 @@ enum ResourceKey {
 - [x] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `posqr.jayjayservices.com` ออกโดย Let's Encrypt,
       `/etc/cron.d/certbot` ต่ออายุอัตโนมัติ, HTTP → HTTPS 301)
 - [ ] CD อัตโนมัติ: pull image ใหม่ + **zero-downtime restart** — ปลดเงื่อนไข `vars.DEPLOY_ENABLED`
+      > 🔧 **โค้ดครบแล้ว รอรันบน VPS**: `docker-compose.prod.yml` แยกเป็น `app-blue`/`app-green`
+      > (profile ละสี ผูก 127.0.0.1 ทั้งคู่) · `ops/switch-deploy.sh` สลับสี · `ops/setup-zero-downtime.sh`
+      > ตั้งเครื่องครั้งเดียว (upstream + sudoers เฉพาะ `nginx -t`/`-s reload` + `max-concurrent-downloads`)
+      > · CI เรียงเป็น pull → migrate → `switch-deploy.sh` แล้ว
+      > **ติ๊กได้เมื่อรัน `bash ops/verify-zero-downtime.sh` บน VPS แล้วได้ล้ม 0 ครั้ง**
       ลำดับใน job `deploy`: tag image เดิมเป็น `:previous` → pull → **migrate ก่อน** →
       `ops/switch-deploy.sh` สลับ blue/green
       - รันแอปสองชุดสลับกัน `app-blue` (127.0.0.1:3001) / `app-green` (3002) — สีเดียวเท่านั้นที่รับ traffic
@@ -1126,20 +1140,27 @@ enum ResourceKey {
       > ถ้าต้องการสำเนาที่ทำงานตลอดเวลา ติดตั้ง `rclone` แล้วตั้ง `BACKUP_REMOTE=` ใน `.env`
       > (ให้ `ops/backup-db.sh` รองรับ path นี้ไว้ตั้งแต่แรก เผื่อต่อปลายทาง S3/B2 ภายหลัง)
 - [ ] Rollback strategy: กลับไป image เวอร์ชันก่อนหน้าได้ — `ops/rollback.sh <tag>`
+      > 🔧 สคริปต์พร้อมแล้ว และย้อนแบบไม่มี downtime ด้วย (เรียก `switch-deploy.sh` ต่อ)
+      > **เหลือทดสอบสลับ `latest` ↔ `previous` บน VPS จริง — health ต้องผ่านทั้งสองทาง**
       เปลี่ยน `APP_TAG` ใน `.env` → pull (หรือใช้ image บนเครื่องถ้าดึงไม่ได้) → `up -d --wait` → เช็ก health
       ไม่ผ่านใน 60 วิ ย้อนค่ากลับให้เอง · CD เก็บ tag `:previous` ไว้ทุกครั้งจึงย้อนได้แม้ registry ล่ม
       · ทดสอบสลับ `latest` ↔ `previous` — health ต้องผ่านทั้งสองทาง
 - [ ] Monitoring: health check endpoint + alert เมื่อ service ล่ม — `/api/health` + `ops/health-alert.sh`
+      > 🔧 สคริปต์พร้อมแล้ว (อ่านคอนเทนเนอร์ของสีที่รับ traffic อยู่ผ่าน `active_app_container`)
+      > **เหลือติดตั้ง cron บน VPS แล้วทดสอบส่งจริงทั้งสองทิศทาง (ปกติ→ล่ม, ล่ม→ปกติ)**
       cron ทุก 5 นาที ส่งอีเมลผ่าน Resend **เฉพาะตอนสถานะเปลี่ยน** (ปกติ→ล่ม, ล่ม→ปกติ) ไม่สแปมซ้ำ
       ต้องล้มติดกัน 2 ครั้งถึงเตือน กันเตือนหลอกตอน deploy · ทดสอบส่งจริงให้ครบทั้งสองทิศทาง
-- [ ] **ต่อ mail provider จริง (Resend HTTP API) — ย้ายฟังก์ชันส่งอีเมลออกมาไว้ที่ `lib/mail.ts`**
+- [x] **ต่อ mail provider จริง (Resend HTTP API) — ย้ายฟังก์ชันส่งอีเมลออกมาไว้ที่ `lib/mail.ts`**
       (`sendVerificationMail` / `sendResetPasswordMail`) แล้วให้ `lib/auth.ts` เรียกใช้
       - ตั้งค่าผ่าน env: `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_REPLY_TO` (ไม่บังคับ)
       - โดเมนผู้ส่งที่ verify ไว้: `mail.jayjayservices.com` (SPF `v=spf1 include:amazonses.com ~all`,
         DKIM `resend._domainkey.mail`, MX return-path `feedback-smtp.ap-northeast-1.amazonses.com`)
       - ยังไม่ตั้งค่า key → dev พิมพ์ลิงก์ลง console เหมือนเดิม · production **throw ทิ้ง** ไม่พิมพ์ลิงก์ลง log
         เพราะลิงก์ยืนยัน/รีเซ็ตรหัสผ่านคือ credential ชั่วคราว
-- [ ] **เปิดยืนยันอีเมลตอนสมัครสมาชิก** (`emailVerification.sendOnSignUp` + `requireEmailVerification`)
+- [x] **เปิดยืนยันอีเมลตอนสมัครสมาชิก** (`emailVerification.sendOnSignUp` + `requireEmailVerification`)
+      > โค้ดครบแล้ว: `requireEmailVerification: true`, หน้า `/verify-email` + ฟอร์มขอลิงก์ใหม่,
+      > `/login` ดัก `EMAIL_NOT_VERIFIED` แล้วเสนอปุ่ม “ส่งอีเมลยืนยันอีกครั้ง”
+      > **เกณฑ์ผ่านบน production ยังทดสอบไม่ได้** จนกว่า `.env` บน server จะมี `RESEND_API_KEY`/`MAIL_FROM`
       - สมัครเสร็จ → ส่งลิงก์ยืนยัน (อายุ 1 ชม.) → หน้าสมัครเปลี่ยนเป็นการ์ด "ตรวจอีเมลของคุณ" + ปุ่มส่งซ้ำ
       - บัญชีที่ยังไม่ยืนยันล็อกอินไม่ได้ (403 `EMAIL_NOT_VERIFIED`) — หน้า `/login` ต้องดักไว้
         แล้วเสนอปุ่ม "ส่งอีเมลยืนยันอีกครั้ง"
@@ -1214,7 +1235,13 @@ enum ResourceKey {
 > ทุกครั้งที่ render/refresh มิฉะนั้นตัวเลขจะค้าง
 
 ### ⏭️ Phase 8 — Kitchen Ticket Flow (Printer + KDS) & Per-Item Cancel
-- [ ] เชื่อมเครื่องพิมพ์ครัว (LAN/USB/Serial) — พิมพ์ทิกเก็ตทันทีที่ `MobileOrder` ถูกสร้าง
+- [x] พิมพ์ทิกเก็ตครัวได้ทันทีที่ `MobileOrder` ถูกสร้าง — **พิมพ์ผ่านเครื่องพิมพ์ PDF**
+      > หน้า `/tickets/[orderId]` เป็นทิกเก็ตขนาดใบเสร็จ · `?auto=1` เปิดกล่องพิมพ์ให้ทันที แล้วเลือก
+      > เครื่องพิมพ์เป็น “Microsoft Print to PDF” / “Save as PDF” · ปุ่มอยู่ทั้งบน KDS และหน้ารายละเอียดโต๊ะ
+      > ผลการพิมพ์บันทึกที่ `MobileOrder.printedAt` (ประทับครั้งแรกครั้งเดียว ไม่เลื่อนเวลาเมื่อพิมพ์ซ้ำ)
+      > **เบราว์เซอร์เป็นตัวสร้าง PDF โดยตั้งใจ** — ไลบรารี PDF ฝั่ง server ต้องฝังฟอนต์ไทยเอง ซึ่งเป็นจุดที่
+      > สระ/วรรณยุกต์ลอยบ่อยที่สุด · ไดรเวอร์ ESC/POS เดิมที่ `lib/kitchen-printer.ts` ยังอยู่ครบและ
+      > ทำงานทันทีที่ตั้ง `KITCHEN_PRINTER_HOST` (ใช้คู่กันได้ ไม่ใช่ทางเลือกแทนกัน)
       > 🔧 เขียนไดรเวอร์ไว้แล้วที่ `lib/kitchen-printer.ts` (ESC/POS over TCP พอร์ต 9100 + code page ไทย PC874)
       > เปิดใช้ด้วย env `KITCHEN_PRINTER_HOST` · ไม่ตั้ง = ไม่มีเครื่องพิมพ์ ระบบทำงานต่อได้ปกติ
       > **ยังติ๊กไม่ได้เพราะต้องทดสอบกับเครื่องพิมพ์จริงในร้าน** (ผลการพิมพ์บันทึกที่ `MobileOrder.printedAt`)
@@ -1276,12 +1303,14 @@ enum ResourceKey {
 - [ ] ส่ง push 3 จุด (F19) + บันทึก `LineNotificationLog`
 - [ ] ตรวจสอบ: ส่งจริง 3 ประเภทสำเร็จ, ส่งไม่สำเร็จไม่กระทบ flow ชำระเงิน
 
-### ⏭️ Phase 12 — POS Manager Branding Settings & CRM/Membership MVP
-- [ ] หน้า `/mobile-order/settings` (โลโก้/ปก/ธีม/เมนูแนะนำ/สลับ `hasKDS`)
-- [ ] Schema: `Member`, `MemberPointTransaction` (ถ้ายังไม่ทำใน Phase 6) + server actions `registerMember`,
+### ✅ Phase 12 — POS Manager Branding Settings & CRM/Membership MVP
+- [x] หน้า `/mobile-order/settings` (โลโก้/ปก/ธีม/เมนูแนะนำ/สลับ `hasKDS`/ค่าบริการ/เปิด-ปิดระบบสมาชิก)
+- [x] Schema: `Member`, `MemberPointTransaction` (สร้างไว้แล้วตั้งแต่ Phase 6) + server action `registerMember`
+      ที่สมัครและให้แต้มในทรานแซคชันเดียว (idempotent ด้วย unique `MemberPointTransaction.saleId`)
       `awardPoints`
-- [ ] หน้าสมัครสมาชิกบน payment-success (F22)
-- [ ] ตรวจสอบ: สมัคร+ได้แต้มอัตโนมัติถูกต้อง, สลับ `hasKDS` ถูกบล็อกขณะมีโต๊ะเปิดอยู่
+- [x] ฟอร์มสมัครสมาชิกบน payment-success (F22) — โผล่เฉพาะร้านที่เปิด `crmEnabled` ไว้
+- [x] ตรวจสอบ: สมัคร+ได้แต้มอัตโนมัติถูกต้อง, สลับ `hasKDS` ถูกบล็อกขณะมีโต๊ะเปิดอยู่
+      — `__tests__/integration/store-settings.test.ts` (13 เคส)
 
 > ⚠️ **กับดัก — สลับ `hasKDS` กลางไลฟ์**: ถ้าเปลี่ยนขณะมี `TableSession.status=OPEN` อยู่ รายการที่ค้างอยู่
 > ระหว่าง `COOKING`/`READY` จะกำพร้า (ไม่มีใครกด "เสิร์ฟอาหารแล้ว" เพราะ UI ไม่มีปุ่มนี้อีก) — ต้อง validate

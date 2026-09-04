@@ -180,14 +180,27 @@ export function TableDetail({ detail }: { detail: TableDetailData }) {
                   {order.printedAt ? ` · พิมพ์ทิกเก็ตแล้ว ${formatClock(order.printedAt)}` : " · ยังไม่ได้พิมพ์ทิกเก็ต"}
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn btn-subtle btn-sm"
-                disabled={pending}
-                onClick={() => reprint(order.id)}
-              >
-                พิมพ์ทิกเก็ตซ้ำ
-              </button>
+              <div className="row" style={{ gap: 8 }}>
+                {/* เส้นทางหลักตอนนี้คือ PDF — ปุ่มส่งเข้าเครื่องพิมพ์จริงยังอยู่ เผื่อร้านต่อเครื่องแล้ว */}
+                <a
+                  href={`/tickets/${order.id}?auto=1`}
+                  target="_blank"
+                  rel="noopener"
+                  className="btn btn-primary btn-sm"
+                >
+                  <IconReceipt size={15} aria-hidden />
+                  ทิกเก็ต PDF
+                </a>
+                <button
+                  type="button"
+                  className="btn btn-subtle btn-sm"
+                  disabled={pending}
+                  onClick={() => reprint(order.id)}
+                  title="ส่งเข้าเครื่องพิมพ์ครัวที่ต่อ LAN (ต้องตั้ง KITCHEN_PRINTER_HOST)"
+                >
+                  ส่งเข้าเครื่องพิมพ์
+                </button>
+              </div>
             </div>
 
             <ul style={{ display: "flex", flexDirection: "column" }}>

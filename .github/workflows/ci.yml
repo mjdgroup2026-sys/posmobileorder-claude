@@ -171,8 +171,21 @@ jobs:
             # จึงย้อนกลับได้แม้ ghcr.io ล่ม (rollback.sh ใช้ image ในเครื่องก่อนเสมอ)
             docker tag ghcr.io/mjdgroup2026-sys/posmobileorder-claude:latest \
                        ghcr.io/mjdgroup2026-sys/posmobileorder-claude:previous 2>/dev/null || true
+
+            # ⚠️ ลำดับสำคัญ: pull → migrate → **ค่อย** สลับสี
+            #    ถ้าสลับก่อน migrate โค้ดใหม่จะเจอ schema เก่าในช่วงคาบเกี่ยว แล้ว 500 ใส่ลูกค้า
             docker compose -f docker-compose.prod.yml --profile tools pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # db ต้องขึ้นก่อน migrate — สั่งเฉพาะ service นี้ ไม่แตะสีที่รับ traffic อยู่
+            # ⚠️ ห้ามใส่ --remove-orphans: สีที่กำลังให้บริการอยู่คนละ profile จะถูกนับเป็น
+            #    orphan แล้วโดนลบทิ้งกลางคัน = downtime เต็ม ๆ
+            docker compose -f docker-compose.prod.yml up -d db
             docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+
+            # สลับ blue/green — สคริปต์ตรวจ health ของสีใหม่ก่อนแตะ nginx และคืนสีเดิมให้เอง
+            # ถ้าล้ม (exit code ไม่ใช่ 0 → set -e ทำให้ job แดง แต่ production ยังให้บริการอยู่)
+            bash ops/switch-deploy.sh
+
             docker image prune -f
             docker compose -f docker-compose.prod.yml ps
+            bash ops/switch-deploy.sh --status

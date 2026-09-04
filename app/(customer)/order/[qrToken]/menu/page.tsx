@@ -29,6 +29,36 @@ export default async function CustomerMenuPage({ params }: PageProps<"/order/[qr
 
   return (
     <CustomerShell storeName={settings?.storeName ?? "MJD Mobile Order"} tableCode={session.tableCode}>
+      {/* ปก/โลโก้ที่ร้านตั้งเองได้จากหน้า /mobile-order/settings (F21)
+          ใช้ <img> ธรรมดาเพราะเป็น URL ภายนอกที่ร้านกรอกเอง — next/image ต้องประกาศ
+          remotePatterns ล่วงหน้า ซึ่งทำไม่ได้กับโดเมนที่ยังไม่รู้ตอน build */}
+      {settings?.coverImageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={settings.coverImageUrl}
+          alt=""
+          style={{
+            width: "100%",
+            height: 140,
+            objectFit: "cover",
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        />
+      ) : null}
+
+      {settings?.logoUrl ? (
+        <div className="row" style={{ gap: 10, marginBottom: 12 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={settings.logoUrl}
+            alt={settings.storeName}
+            style={{ width: 44, height: 44, objectFit: "contain", borderRadius: 10 }}
+          />
+          <span style={{ fontWeight: 700 }}>{settings.storeName}</span>
+        </div>
+      ) : null}
+
       <MenuView
         qrToken={qrToken}
         featured={menu.featured}

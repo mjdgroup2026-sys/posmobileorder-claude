@@ -13,20 +13,45 @@ export function LoginForm() {
   const callbackUrl = searchParams.get("callbackUrl") ?? "/"
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [resent, setResent] = useState(false)
+
+  async function resendVerification() {
+    if (!unverifiedEmail) return
+    setPending(true)
+    try {
+      await authClient.sendVerificationEmail({ email: unverifiedEmail, callbackURL: "/verify-email" })
+      setResent(true)
+      toast.success("ส่งอีเมลยืนยันใหม่แล้ว กรุณาตรวจกล่องจดหมาย")
+    } catch {
+      toast.error("ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    } finally {
+      setPending(false)
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setUnverifiedEmail(null)
+    setResent(false)
     setPending(true)
 
     const form = new FormData(event.currentTarget)
+    const email = String(form.get("email") ?? "")
     const { error: authError } = await authClient.signIn.email({
-      email: String(form.get("email") ?? ""),
+      email,
       password: String(form.get("password") ?? ""),
     })
 
     if (authError) {
       setPending(false)
+      // บัญชีถูกต้องแต่ยังไม่ยืนยันอีเมล — ต้องบอกให้ตรงจุด ไม่งั้นผู้ใช้ไล่แก้รหัสผ่านไปเรื่อย
+      if (authError.code === "EMAIL_NOT_VERIFIED" || authError.status === 403) {
+        setUnverifiedEmail(email)
+        setError("บัญชีนี้ยังไม่ได้ยืนยันอีเมล กรุณากดลิงก์ในอีเมลที่ส่งไปให้ก่อนเข้าสู่ระบบ")
+        return
+      }
       setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง")
       return
     }
@@ -46,6 +71,12 @@ export function LoginForm() {
       </div>
 
       {error ? <div className="alert-banner danger">{error}</div> : null}
+
+      {unverifiedEmail && !resent ? (
+        <button type="button" className="btn btn-subtle btn-block" disabled={pending} onClick={resendVerification}>
+          ส่งอีเมลยืนยันอีกครั้ง
+        </button>
+      ) : null}
 
       <div className="field">
         <label className="t-small" htmlFor="email">

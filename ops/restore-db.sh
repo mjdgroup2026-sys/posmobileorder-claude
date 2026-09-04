@@ -121,7 +121,9 @@ docker exec "$DB_CONTAINER" pg_dump -U "$USER_NAME" -d "$DB_NAME" -Fc -f /tmp/sa
   && ok "สำรองไว้ที่ ${SAFETY}" || fail "สำรองก่อนทับไม่สำเร็จ — หยุดไว้ก่อน ไม่กู้ทับ"
 
 step "2/4 หยุดแอปกันไม่ให้เขียนระหว่างกู้"
-docker stop "$APP_CONTAINER" > /dev/null 2>&1 && ok "หยุด ${APP_CONTAINER} แล้ว" || warn "หยุดแอปไม่ได้ (อาจไม่ได้รันอยู่)"
+# แอปแยกเป็น blue/green แล้ว — หยุดเฉพาะสีที่รับ traffic อยู่ (อีกสีถูก rm ทิ้งหลังสลับไปแล้ว)
+ACTIVE_APP="$(active_app_container)"
+docker stop "$ACTIVE_APP" > /dev/null 2>&1 && ok "หยุด ${ACTIVE_APP} แล้ว" || warn "หยุดแอปไม่ได้ (อาจไม่ได้รันอยู่)"
 
 step "3/4 สร้างฐานใหม่แล้วกู้"
 docker exec "$DB_CONTAINER" psql -U "$USER_NAME" -d postgres -c "DROP DATABASE IF EXISTS \"${DB_NAME}\"" > /dev/null
@@ -132,7 +134,7 @@ NEW_TABLES=$(psql_q "$DB_NAME" "select count(*) from pg_tables where schemaname=
 ok "กู้แล้ว ${NEW_TABLES} ตาราง"
 
 step "4/4 เปิดแอปกลับ"
-docker start "$APP_CONTAINER" > /dev/null 2>&1 && ok "เปิด ${APP_CONTAINER} แล้ว" || warn "เปิดแอปไม่ได้"
+docker start "$ACTIVE_APP" > /dev/null 2>&1 && ok "เปิด ${ACTIVE_APP} แล้ว" || warn "เปิดแอปไม่ได้"
 docker exec "$DB_CONTAINER" rm -f "$IN_CONTAINER" > /dev/null 2>&1 || true
 
 log "เสร็จ — ถ้าผลไม่เป็นอย่างที่คิด ย้อนกลับได้จาก ${SAFETY}"

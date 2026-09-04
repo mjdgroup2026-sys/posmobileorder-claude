@@ -42,7 +42,7 @@ log "═════════════════════════
 log " ย้อนแอป: ${CURRENT_TAG} → ${TARGET_TAG}"
 log "═══════════════════════════════════════════════════════════"
 
-step "1/4 เตรียม image ${IMAGE_REPO}:${TARGET_TAG}"
+step "1/3 เตรียม image ${IMAGE_REPO}:${TARGET_TAG}"
 if docker image inspect "${IMAGE_REPO}:${TARGET_TAG}" > /dev/null 2>&1; then
   ok "มี image อยู่บนเครื่องแล้ว ไม่ต้องดึงใหม่"
 elif docker pull "${IMAGE_REPO}:${TARGET_TAG}" > /dev/null 2>&1; then
@@ -62,36 +62,23 @@ set_tag() {
   fi
 }
 
-step "2/4 ตั้ง APP_TAG=${TARGET_TAG} แล้วสตาร์ตใหม่"
+step "2/3 ตั้ง APP_TAG=${TARGET_TAG} แล้วสลับสีไปเวอร์ชันนั้น"
 set_tag "$TARGET_TAG"
-docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 90 > /dev/null 2>&1 \
-  || warn "compose up ไม่ได้รายงานว่า healthy ภายใน 90 วินาที — ตรวจ health ต่อ"
-ok "สตาร์ตแล้ว"
-
-step "3/4 ตรวจ ${HEALTH_URL} (ไม่เกิน 60 วินาที)"
-PASSED=0
-for i in $(seq 1 12); do
-  # ห้ามต่อ `|| echo 000` — curl พิมพ์ 000 เองอยู่แล้วตอนต่อไม่ติด จะได้ "000000"
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$HEALTH_URL" 2>/dev/null) || true
-  [ -n "$CODE" ] || CODE="000"
-  if [ "$CODE" = "200" ]; then PASSED=1; ok "health ผ่าน (ครั้งที่ ${i}, HTTP 200)"; break; fi
-  log "    ครั้งที่ ${i}: HTTP ${CODE} — รอต่อ"
-  sleep 5
-done
-
-step "4/4 สรุป"
-if [ "$PASSED" = "1" ]; then
+# ย้อนเวอร์ชันก็ต้องไม่มี downtime เหมือน deploy ปกติ — switch-deploy.sh สตาร์ตสีใหม่
+# ด้วย tag นี้ ตรวจ health เอง แล้วค่อยสลับ nginx · ล้มเมื่อไหร่มันคืนสีเดิมให้เองอยู่แล้ว
+if bash "${SCRIPT_DIR}/switch-deploy.sh"; then
+  step "3/3 สรุป"
   log ""
   log "✅ ย้อนสำเร็จ — ตอนนี้รัน ${IMAGE_REPO}:${TARGET_TAG}"
   log "   จะย้อนกลับไปตัวเดิม: bash ops/rollback.sh ${CURRENT_TAG}"
   exit 0
 fi
 
-warn "health ไม่ผ่านใน 60 วินาที — ย้อนค่ากลับเป็น ${CURRENT_TAG} อัตโนมัติ"
+step "3/3 สลับไม่สำเร็จ — คืนค่า"
+# nginx ยังชี้สีเดิมที่รัน ${CURRENT_TAG} อยู่ (switch-deploy.sh คืนให้เองแล้ว)
+# เหลือแค่คืนค่า APP_TAG ใน .env ไม่ให้ deploy รอบหน้าหยิบ tag ที่ใช้ไม่ได้ไปใช้ต่อ
 set_tag "$CURRENT_TAG"
-docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 90 > /dev/null 2>&1 || true
 notify "[MJD] rollback ไป ${TARGET_TAG} ไม่สำเร็จ" \
-  "ย้อนค่า APP_TAG กลับเป็น ${CURRENT_TAG} ให้แล้ว
-เวลา: $(date '+%Y-%m-%d %H:%M:%S')
-health ล่าสุด: HTTP ${CODE}"
-fail "ย้อนไป ${TARGET_TAG} ไม่สำเร็จ — คืนค่าเป็น ${CURRENT_TAG} แล้ว"
+  "ย้อนค่า APP_TAG กลับเป็น ${CURRENT_TAG} ให้แล้ว และ nginx ยังชี้สีเดิมตามปกติ
+เวลา: $(date '+%Y-%m-%d %H:%M:%S')"
+fail "ย้อนไป ${TARGET_TAG} ไม่สำเร็จ — คืนค่าเป็น ${CURRENT_TAG} แล้ว (ระบบยังให้บริการตามปกติ)"

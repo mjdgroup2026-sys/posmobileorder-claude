@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { getCustomerPaymentStatus, getStoreSettings } from "@/lib/queries"
 import { formatBaht, formatDateTime } from "@/lib/format"
 import { CustomerShell, CustomerNotice } from "@/components/customer/customer-shell"
+import { MemberJoin } from "@/components/customer/member-join"
 
 export const metadata = { title: "ชำระเงินสำเร็จ" }
 
@@ -64,10 +65,8 @@ export default async function PaySuccessPage({ params }: PageProps<"/order/[qrTo
           </div>
         </section>
 
-        {/* จุดนี้คือที่ของฟอร์มสมัครสมาชิก (F22) — เปิดใช้งานใน Phase 12 พร้อมตาราง Member */}
-        {settings?.crmEnabled ? (
-          <div className="alert-banner info">สมัครสมาชิกสะสมแต้มได้ที่เคาน์เตอร์ — ระบบสมัครออนไลน์กำลังจะมา</div>
-        ) : null}
+        {/* สมัครสมาชิก + รับแต้มทันทีจากบิลนี้ (F22) — โผล่เฉพาะร้านที่เปิด CRM ไว้ */}
+        {settings?.crmEnabled ? <MemberJoin qrToken={qrToken} saleTotal={status.total} /> : null}
 
         <Link href={`/order/${qrToken}/status`} className="btn btn-subtle btn-block">
           ดูรายการที่สั่งไป

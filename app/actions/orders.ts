@@ -248,7 +248,10 @@ export async function reprintKitchenTicket(formData: FormData): Promise<ActionRe
   if (!order) return { ok: false, error: "ไม่พบออร์เดอร์นี้" }
 
   if (!isPrinterConfigured()) {
-    return { ok: false, error: "ยังไม่ได้ตั้งค่าเครื่องพิมพ์ครัว (KITCHEN_PRINTER_HOST) จึงพิมพ์ไม่ได้" }
+    return {
+      ok: false,
+      error: "ยังไม่ได้ต่อเครื่องพิมพ์ครัว — ใช้ปุ่ม “ทิกเก็ต PDF” พิมพ์ผ่านเบราว์เซอร์แทนได้เลย",
+    }
   }
 
   const printed = await printKitchenTicket({
@@ -274,4 +277,31 @@ export async function reprintKitchenTicket(formData: FormData): Promise<ActionRe
 
   revalidateOrderPages()
   return { ok: true, message: `พิมพ์ทิกเก็ตออร์เดอร์ที่ ${order.orderNumber} ซ้ำเรียบร้อยแล้ว` }
+}
+
+/// บันทึกว่าทิกเก็ตถูกพิมพ์แล้ว — เรียกจากหน้า `/tickets/[orderId]` ตอนผู้ใช้กดพิมพ์/บันทึก PDF
+///
+/// แยกจาก `reprintKitchenTicket` เพราะเส้นทาง PDF ไม่ได้ส่งงานไปเครื่องพิมพ์เอง
+/// เบราว์เซอร์เป็นคนพิมพ์ ฝั่ง server จึงมีหน้าที่แค่ประทับเวลาไว้ให้ผังโต๊ะ/KDS เห็นตรงกัน
+export async function markTicketPrinted(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  // ประทับเฉพาะครั้งแรก — เปิดหน้าเดิมซ้ำไม่ควรเลื่อนเวลา "พิมพ์ครั้งแรก" ให้ใหม่เรื่อย ๆ
+  const stamped = await prisma.mobileOrder.updateMany({
+    where: { id: parsed.data.id, printedAt: null },
+    data: { printedAt: new Date() },
+  })
+
+  revalidateOrderPages()
+  return {
+    ok: true,
+    message: stamped.count > 0 ? "บันทึกว่าพิมพ์ทิกเก็ตแล้ว" : "ทิกเก็ตนี้เคยพิมพ์ไปแล้ว",
+  }
 }

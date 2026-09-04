@@ -18,6 +18,7 @@ import {
   IconBell,
   IconKitchen,
   IconQr,
+  IconStore,
 } from "@/components/icons"
 
 type NavItem = { href: string; label: string; Icon: typeof IconDashboard; badge?: "lowStock" | "pending" }
@@ -38,6 +39,7 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
       { href: "/mobile-order/notifications", label: "การแจ้งเตือน", Icon: IconBell, badge: "pending" },
       { href: "/mobile-order/kitchen", label: "หน้าจอครัว (KDS)", Icon: IconKitchen },
       { href: "/mobile-order/qr-codes", label: "จัดการ QR Code", Icon: IconQr },
+      { href: "/mobile-order/settings", label: "ตั้งค่าร้าน", Icon: IconStore },
     ],
   },
   {

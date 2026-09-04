@@ -8,7 +8,7 @@ import { formatClock, formatNumber } from "@/lib/format"
 import type { KitchenTicket, OrderItemRow } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
-import { IconKitchen, IconSpinner } from "@/components/icons"
+import { IconKitchen, IconReceipt, IconSpinner } from "@/components/icons"
 
 type Column = {
   key: "AWAITING_KITCHEN" | "COOKING" | "READY"
@@ -171,16 +171,30 @@ export function KitchenDisplay({ tickets, hasKDS }: { tickets: KitchenTicket[]; 
                       {ticket.items.map(renderItem)}
                     </ul>
 
-                    {action ? (
-                      <button
-                        type="button"
-                        className={action.className}
-                        disabled={pending}
-                        onClick={() => void handle(action.run, ticket.orderId)}
+                    <div className="row" style={{ gap: 8 }}>
+                      {action ? (
+                        <button
+                          type="button"
+                          className={action.className}
+                          disabled={pending}
+                          onClick={() => void handle(action.run, ticket.orderId)}
+                          style={{ flex: 1 }}
+                        >
+                          {action.label}
+                        </button>
+                      ) : null}
+                      {/* พิมพ์ผ่าน PDF แทนเครื่องพิมพ์ความร้อน (Phase 8) — เปิดแท็บใหม่แล้วเด้งกล่องพิมพ์ให้เลย */}
+                      <a
+                        href={`/tickets/${ticket.orderId}?auto=1`}
+                        target="_blank"
+                        rel="noopener"
+                        className="btn btn-subtle btn-sm"
+                        title="เปิดทิกเก็ตเพื่อพิมพ์หรือบันทึกเป็น PDF"
                       >
-                        {action.label}
-                      </button>
-                    ) : null}
+                        <IconReceipt size={15} aria-hidden />
+                        ทิกเก็ต
+                      </a>
+                    </div>
                   </article>
                 ))
               )}

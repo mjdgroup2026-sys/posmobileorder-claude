@@ -264,3 +264,54 @@ export const startPaymentSchema = z.object({
   qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
   method: z.enum(["PROMPTPAY", "CARD"], { error: "กรุณาเลือกวิธีชำระเงิน" }),
 })
+
+// ───────────────────── ตั้งค่าร้าน + สมาชิก (Phase 12) ─────────────────────
+
+/// สีธีมต้องเป็น hex 6 หลักเท่านั้น — ค่านี้ถูกยัดลง inline style บน <body> ของฝั่งลูกค้า
+/// รับค่าอิสระไม่ได้ เพราะเท่ากับให้ผู้ใช้เขียน CSS ลงหน้าเว็บได้ตามใจ
+const hexColor = z
+  .string({ error: "กรุณาเลือกสีธีม" })
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, "สีธีมต้องเป็นรหัส hex 6 หลัก เช่น #E8571F")
+
+/// URL รูปภาพ — อนุญาตเฉพาะ http/https และ path ภายในเว็บ (กัน javascript: กับ data:)
+const imageUrl = z
+  .string()
+  .trim()
+  .max(500, "ลิงก์รูปยาวเกินไป")
+  .refine((v) => v === "" || /^(https?:\/\/|\/)/.test(v), "ลิงก์รูปต้องขึ้นต้นด้วย http://, https:// หรือ /")
+  .transform((v) => (v === "" ? null : v))
+
+export const storeSettingsSchema = z.object({
+  storeName: z.string().trim().min(1, "กรุณากรอกชื่อร้าน").max(80, "ชื่อร้านยาวเกินไป"),
+  themeColor: hexColor,
+  logoUrl: imageUrl,
+  coverImageUrl: imageUrl,
+  serviceChargePercent: z.coerce
+    .number({ error: "ค่าบริการต้องเป็นตัวเลข" })
+    .min(0, "ค่าบริการต้องไม่ติดลบ")
+    .max(100, "ค่าบริการต้องไม่เกิน 100%"),
+  hasKDS: z.coerce.boolean(),
+  crmEnabled: z.coerce.boolean(),
+})
+
+/// เมนูแนะนำสูงสุด 6 รายการ — รายการที่ 7 ต้องถูกปฏิเสธที่ server ไม่ใช่แค่ปิดปุ่มบน UI (F21)
+export const MAX_FEATURED_MENU = 6
+
+export const featuredMenuSchema = z.object({
+  menuItemIds: z
+    .array(z.string().trim().min(1))
+    .max(MAX_FEATURED_MENU, `ปักหมุดเมนูแนะนำได้สูงสุด ${MAX_FEATURED_MENU} รายการ`)
+    .refine((ids) => new Set(ids).size === ids.length, "มีเมนูซ้ำในรายการที่เลือก"),
+})
+
+/// เบอร์โทรไทย 10 หลักขึ้นต้นด้วย 0 — เก็บเป็นตัวเลขล้วนเสมอ เบอร์เดียวกันที่พิมพ์คนละรูปแบบ
+/// (มีขีด/เว้นวรรค) ต้อง normalize ให้ตรงกัน ไม่งั้น unique ของ Member กันซ้ำไม่ได้จริง
+export const registerMemberSchema = z.object({
+  qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
+  phone: z
+    .string({ error: "กรุณากรอกเบอร์โทร" })
+    .trim()
+    .transform((v) => v.replace(/[^0-9]/g, ""))
+    .refine((v) => /^0\d{9}$/.test(v), "เบอร์โทรต้องเป็นตัวเลข 10 หลักขึ้นต้นด้วย 0"),
+})

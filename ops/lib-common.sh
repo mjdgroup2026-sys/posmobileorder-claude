@@ -8,9 +8,37 @@ export STACK_DIR="${STACK_DIR:-/home/deploy/posmobileorder}"
 export COMPOSE_FILE="${COMPOSE_FILE:-${STACK_DIR}/docker-compose.prod.yml}"
 export ENV_FILE="${ENV_FILE:-${STACK_DIR}/.env}"
 export DB_CONTAINER="${DB_CONTAINER:-posmobileorder-db}"
-export APP_CONTAINER="${APP_CONTAINER:-posmobileorder-app}"
 export BACKUP_DIR="${BACKUP_DIR:-/home/deploy/backups}"
 export HEALTH_URL="${HEALTH_URL:-https://posqr.jayjayservices.com/api/health}"
+
+# ── blue/green (Phase 5) ────────────────────────────────────────────────────
+# แอปรันสองชุดสลับกัน สีเดียวเท่านั้นที่ nginx ชี้ไปหาในแต่ละช่วงเวลา
+# ops/switch-deploy.sh เป็นตัวเดียวที่เขียนไฟล์ upstream นี้ จึงใช้มันเป็นแหล่งความจริง
+export APP_BLUE_PORT="${APP_BLUE_PORT:-3001}"
+export APP_GREEN_PORT="${APP_GREEN_PORT:-3002}"
+export NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/pos-upstream.conf}"
+
+app_container() { echo "posmobileorder-app-$1"; }
+app_port()      { [ "$1" = "green" ] && echo "$APP_GREEN_PORT" || echo "$APP_BLUE_PORT"; }
+other_color()   { [ "$1" = "blue" ] && echo "green" || echo "blue"; }
+
+# สีที่รับ traffic อยู่ตอนนี้ — อ่านจากไฟล์ upstream ก่อน ถ้ายังไม่มี (ยังไม่เคยตั้ง
+# zero-downtime) ค่อยเดาจากคอนเทนเนอร์ที่รันอยู่ · ไม่เจออะไรเลยถือว่า blue
+active_color() {
+  if [ -f "$NGINX_UPSTREAM_CONF" ] && grep -q ":${APP_GREEN_PORT};" "$NGINX_UPSTREAM_CONF" 2>/dev/null; then
+    echo green; return
+  fi
+  if [ -f "$NGINX_UPSTREAM_CONF" ]; then echo blue; return; fi
+  if docker inspect -f '{{.State.Running}}' "$(app_container green)" 2>/dev/null | grep -q true; then
+    echo green; return
+  fi
+  echo blue
+}
+
+# คอนเทนเนอร์แอปที่กำลังรับ traffic — สคริปต์อื่น (health-alert/restore-db) ใช้ตัวนี้
+# แทนชื่อคงที่เดิม `posmobileorder-app` ที่ไม่มีอยู่แล้วหลังแยกเป็นสองสี
+active_app_container() { app_container "$(active_color)"; }
+export APP_CONTAINER="${APP_CONTAINER:-}"
 
 # ── ข้อความ ─────────────────────────────────────────────────────────────────
 # ทุกบรรทัดมี timestamp เพราะสคริปต์พวกนี้รันจาก cron แล้วอ่านย้อนหลังจาก log

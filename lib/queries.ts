@@ -1273,3 +1273,105 @@ export async function getCustomerPaymentStatus(qrToken: string): Promise<Custome
     awaitingBill: session.status === "AWAITING_BILL",
   }
 }
+
+// ───────────────────── ทิกเก็ตครัวแบบ PDF (Phase 8) ─────────────────────
+
+export type KitchenTicketDoc = {
+  orderId: string
+  orderNumber: number
+  tableCode: string
+  mergedTableCodes: string[]
+  submittedAt: Date
+  printedAt: Date | null
+  storeName: string
+  items: { id: string; quantity: number; name: string; options: string[]; note: string | null }[]
+}
+
+/// ทิกเก็ตของออร์เดอร์เดียวสำหรับหน้าพิมพ์/บันทึกเป็น PDF
+/// รายการที่ถูกยกเลิกไม่ขึ้นทิกเก็ต — ครัวต้องไม่เห็นของที่ไม่ต้องทำ
+export async function getKitchenTicket(orderId: string): Promise<KitchenTicketDoc | null> {
+  const order = await prisma.mobileOrder.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      orderNumber: true,
+      submittedAt: true,
+      printedAt: true,
+      session: { select: { tableId: true, table: { select: { code: true } } } },
+      items: {
+        where: { status: { not: "CANCELLED" } },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          quantity: true,
+          note: true,
+          selectedOptionsSnapshot: true,
+          menuItem: { select: { name: true } },
+        },
+      },
+    },
+  })
+  if (!order) return null
+
+  const [settings, merged] = await Promise.all([
+    prisma.storeSettings.findUnique({ where: { id: "default" }, select: { storeName: true } }),
+    prisma.table.findMany({ where: { primaryTableId: order.session.tableId }, select: { code: true } }),
+  ])
+
+  return {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    tableCode: order.session.table.code,
+    mergedTableCodes: merged.map((m) => m.code),
+    submittedAt: order.submittedAt,
+    printedAt: order.printedAt,
+    storeName: settings?.storeName ?? "MJD Mobile Order",
+    items: order.items.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+      name: item.menuItem.name,
+      options: parseOptions(item.selectedOptionsSnapshot).map((o) => o.optionName),
+      note: item.note,
+    })),
+  }
+}
+
+// ───────────────────── ตั้งค่าร้าน (Phase 12) ─────────────────────
+
+export type FeaturableMenuItem = {
+  id: string
+  name: string
+  price: number
+  isActive: boolean
+  isFeatured: boolean
+  featuredSortOrder: number
+}
+
+/// เมนูทั้งหมดสำหรับหน้าตั้งค่า — รวมเมนูที่ปิดใช้งานไว้ด้วย เพื่อให้เห็นว่าอะไรถูกซ่อนอยู่
+export async function listMenuForSettings(): Promise<FeaturableMenuItem[]> {
+  const items = await prisma.menuItem.findMany({
+    orderBy: [{ isFeatured: "desc" }, { featuredSortOrder: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      isActive: true,
+      isFeatured: true,
+      featuredSortOrder: true,
+    },
+  })
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    price: toNumber(item.price),
+    isActive: item.isActive,
+    isFeatured: item.isFeatured,
+    featuredSortOrder: item.featuredSortOrder ?? 0,
+  }))
+}
+
+/// จำนวนโต๊ะที่ยังเปิดอยู่ — หน้าตั้งค่าใช้บอกล่วงหน้าว่าสลับโหมดครัวได้หรือยัง
+/// (ด่านจริงอยู่ใน `updateStoreSettings` ที่เช็คซ้ำในทรานแซคชันเดียวกับการเขียน)
+export async function getOpenSessionCount(): Promise<number> {
+  return prisma.tableSession.count({ where: { status: { in: ["OPEN", "AWAITING_BILL"] } } })
+}

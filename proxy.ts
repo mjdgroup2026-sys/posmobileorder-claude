@@ -7,6 +7,9 @@ import { getSessionCookie } from "better-auth/cookies"
 const ALWAYS_PUBLIC_PREFIXES = [
   "/api/auth",
   "/api/health",
+  // ปลายทางหลังกดลิงก์ในอีเมล — ผู้ใช้ยังไม่มี session ตอนกด และคนที่ยืนยันแล้วก็ต้องเห็นผลลัพธ์
+  // จึงเป็น public เต็มตัว ไม่ใช่ AUTH_PAGE ที่เด้งคนล็อกอินอยู่กลับหน้าแรก
+  "/verify-email",
   "/order", // ฝั่งลูกค้า (Phase 9) — สแกน QR เข้าได้เลย ไม่ต้องล็อกอิน
   "/api/order", // endpoint โพลสถานะของหน้าลูกค้า — ยึด qrToken เป็นตัวระบุตัวตน ไม่มี session
 ]

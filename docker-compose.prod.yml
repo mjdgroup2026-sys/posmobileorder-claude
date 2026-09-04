@@ -25,6 +25,34 @@ name: posmobileorder
 x-database-url: &db-url
   DATABASE_URL: "postgresql://${POSTGRES_USER:-posmobileorderuser}:${POSTGRES_PASSWORD:?ยังไม่ได้ตั้ง POSTGRES_PASSWORD ใน .env บน server}@db:5432/${POSTGRES_DB:-posmobileorderdb}?schema=public"
 
+# ค่าที่สีน้ำเงิน/เขียวใช้เหมือนกันทุกอย่าง ต่างกันแค่ container_name / profile / พอร์ต
+x-app-base: &app-base
+  # APP_TAG ทำให้ ops/rollback.sh ย้อนเวอร์ชันได้โดยไม่ต้องแก้ไฟล์นี้
+  # ปกติไม่มีค่านี้ใน .env จึงใช้ latest — rollback.sh จะเขียน APP_TAG=<tag> ลง .env เอง
+  image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:${APP_TAG:-latest}
+  restart: unless-stopped
+  environment:
+    <<: *db-url
+    NODE_ENV: production
+    # ต้องตรงกับ origin ที่เปิดใช้จริงเป๊ะ ๆ (รวม https) ไม่งั้น Better Auth
+    # ตอบ INVALID_ORIGIN ตอน sign-in ทั้งที่แอปขึ้นปกติ
+    BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://posqr.jayjayservices.com}
+    BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?ยังไม่ได้ตั้ง BETTER_AUTH_SECRET — สร้างด้วย openssl rand -base64 32}"
+    # URL ที่ฝังลง QR Code ของโต๊ะ — ต้องเป็นโดเมนที่มือถือลูกค้าเปิดได้จริง (Phase 9)
+    APP_BASE_URL: ${APP_BASE_URL:-}
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    MAIL_FROM: ${MAIL_FROM:-}
+    MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+    # ชำระเงิน MJD Mobile Order (Phase 10) — ไม่ตั้ง = ปุ่มพร้อมเพย์ปิด และ webhook ตอบ 503
+    PROMPTPAY_ID: ${PROMPTPAY_ID:-}
+    PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+  # image มี HEALTHCHECK ในตัวแล้ว (ดู Dockerfile stage runner) จึงไม่ประกาศซ้ำที่นี่
+  depends_on:
+    db:
+      condition: service_healthy
+  networks:
+    - pos-network
+
 services:
   db:
     # ⚠️ ต้องเป็น 18 เท่านั้น ห้ามลดเป็น 16 — migration 20260828093455_add-auth-models
@@ -80,42 +108,29 @@ services:
     networks:
       - pos-network
 
-  app:
-    # APP_TAG ทำให้ ops/rollback.sh ย้อนเวอร์ชันได้โดยไม่ต้องแก้ไฟล์นี้
-    # ปกติไม่มีค่านี้ใน .env จึงใช้ latest — rollback.sh จะเขียน APP_TAG=<tag> ลง .env เอง
-    image: ghcr.io/mjdgroup2026-sys/posmobileorder-claude:${APP_TAG:-latest}
-    container_name: posmobileorder-app
-    restart: unless-stopped
-    environment:
-      <<: *db-url
-      NODE_ENV: production
-      # ต้องตรงกับ origin ที่เปิดใช้จริงเป๊ะ ๆ (รวม https) ไม่งั้น Better Auth
-      # ตอบ INVALID_ORIGIN ตอน sign-in ทั้งที่แอปขึ้นปกติ
-      # ใช้ default ไม่ใช่ :? เพราะ .env บน server มีแค่ 4 key (POSTGRES_* + BETTER_AUTH_SECRET)
-      # ค่านี้ไม่ใช่ความลับ จึงตั้ง default ได้ ต่างจากรหัสผ่าน/secret ที่ต้องบังคับด้วย :?
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://posqr.jayjayservices.com}
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?ยังไม่ได้ตั้ง BETTER_AUTH_SECRET — สร้างด้วย openssl rand -base64 32}"
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      MAIL_FROM: ${MAIL_FROM:-}
-      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+  # ── blue/green (Phase 5) ───────────────────────────────────────────────────
+  # แอปรันสองชุดที่เหมือนกันทุกอย่างยกเว้นพอร์ต — สีเดียวเท่านั้นที่ nginx ชี้ไปหา
+  # ทั้งคู่อยู่ใต้ profile ของตัวเอง จึงไม่มีสีไหนสตาร์ตเองตอน `docker compose up -d` เปล่า ๆ
+  # ops/switch-deploy.sh เป็นตัวสั่งสตาร์ต/หยุดทีละสี ห้ามสั่ง up เองตรง ๆ ตอน deploy
+  #
+  # ⚠️ ห้ามใช้ --remove-orphans กับ compose ไฟล์นี้ระหว่างสลับสี — สีที่ยังรับ traffic อยู่
+  #    อยู่คนละ profile จึงถูกนับเป็น orphan แล้วโดนลบทิ้งกลางคัน = downtime เต็ม ๆ
+  app-blue:
+    <<: *app-base
+    container_name: posmobileorder-app-blue
+    profiles: [blue]
     ports:
       # ⚠️ ฝั่งขวาต้องเป็น 3000 เสมอ — Dockerfile stage runner ตั้ง ENV PORT=3000
-      # ของเดิมบน server เขียน "3001:3001" ซึ่ง map ไปพอร์ตที่ไม่มีอะไรฟังในคอนเทนเนอร์
-      # ผลคือ nginx ตอบ 502 ทั้งที่ docker ps ขึ้น (healthy) เพราะ HEALTHCHECK ของ image
-      # ยิง 127.0.0.1:3000 ข้างในคอนเทนเนอร์ซึ่งตอบปกติ
-      #
-      # ⚠️ ต้องผูกกับ 127.0.0.1 เสมอ ห้ามเขียน "3001:3000" เฉย ๆ
-      # Docker เขียน iptables เองจึงทะลุ UFW — รูปแบบนั้นจะเปิดพอร์ตออกเน็ตทั้งที่ ufw deny
-      #
-      # ฝั่งซ้ายเป็น 3001 เพื่อให้ตรงกับ nginx ที่ตั้งไว้แล้วบน server
-      # (/etc/nginx/sites-enabled/posmobileorder → proxy_pass http://127.0.0.1:3001)
-      - "127.0.0.1:${APP_PORT:-3001}:3000"
-    # image มี HEALTHCHECK ในตัวแล้ว (ดู Dockerfile stage runner) จึงไม่ประกาศซ้ำที่นี่
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - pos-network
+      # ⚠️ ต้องผูกกับ 127.0.0.1 เสมอ Docker เขียน iptables เองจึงทะลุ UFW ได้
+      #    เขียน "3001:3000" เฉย ๆ = เปิดพอร์ตออกอินเทอร์เน็ตทั้งที่ ufw deny อยู่
+      - "127.0.0.1:${APP_BLUE_PORT:-3001}:3000"
+
+  app-green:
+    <<: *app-base
+    container_name: posmobileorder-app-green
+    profiles: [green]
+    ports:
+      - "127.0.0.1:${APP_GREEN_PORT:-3002}:3000"
 
 networks:
   pos-network:

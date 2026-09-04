@@ -78,7 +78,7 @@ HTTP: ${CODE} (ล้มติดกัน ${fails} ครั้ง)
 ตรวจต่อ:
   ssh posmobileorder
   cd ${STACK_DIR} && docker compose -f docker-compose.prod.yml ps
-  docker logs --tail 50 ${APP_CONTAINER}"
+  docker logs --tail 50 $(active_app_container)"
   write_state "down" "$fails"
   exit 1
 fi

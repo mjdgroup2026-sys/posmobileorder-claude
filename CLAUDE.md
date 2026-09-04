@@ -7,9 +7,10 @@ POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **M
 ร้านอาหารแบบ table service, `Sale.channel = MOBILE_ORDER`) ทั้งสองช่องทางปิดบิลเข้า `Sale`/`SaleItem` ชุดเดียวกัน
 ไม่ใช่ระบบแยก — ดูหัวข้อ [MJD Mobile Order](#-mjd-mobile-order-phase-612) ท้ายไฟล์นี้
 
-> ✅ **Phase 1–2, 2.5 และ 6–10 เสร็จแล้ว** — คลังสินค้า, POS หน้าร้าน และ MJD Mobile Order ตั้งแต่ผังโต๊ะ
-> KDS ลูกค้าสแกน QR สั่งอาหารเอง ไปจนถึงชำระเงิน (พร้อมเพย์/บัตร) แล้วปิดบิลอัตโนมัติได้ครบ ·
-> เหลือ Phase 11–12 (LINE/CRM) และงานค้างใน Phase 5 (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
+> ✅ **Phase 1–4, 2.5, 6–10 และ 12 เสร็จแล้ว** — คลังสินค้า, POS หน้าร้าน และ MJD Mobile Order ครบตั้งแต่
+> ผังโต๊ะ · KDS · ทิกเก็ตครัวพิมพ์ผ่านเครื่องพิมพ์ PDF · ลูกค้าสแกน QR สั่งอาหารเอง · ชำระเงิน
+> (พร้อมเพย์/บัตร) แล้วปิดบิลอัตโนมัติ · ตั้งค่าแบรนด์/ธีมร้าน · สมัครสมาชิกสะสมแต้ม ·
+> เหลือ Phase 11 (LINE) และงานที่ต้องลงมือบน VPS ใน Phase 5 (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
 >
 > **dev server รันที่ port 3001** (`pnpm dev`) เพราะ container `pos-app` ของโปรเจกต์ POS_Shop เดิม
 > ยึด 3000 อยู่ · `BETTER_AUTH_URL` ใน `.env` ต้องตรงกับ origin ที่ใช้จริงเสมอ ไม่งั้น Better Auth
@@ -22,7 +23,7 @@ POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **M
 
 - **Role-Based Permission** — นอกขอบเขต v1 ดูหัวข้อ "สถานะการพัฒนา" ท้ายไฟล์นี้
 
-## 📧 ระบบอีเมล (ข้อกำหนด — ทำใน Phase 5)
+## 📧 ระบบอีเมล (ต่อ Resend แล้วใน Phase 5)
 
 ฟังก์ชันส่งอีเมลต้องอยู่ที่ **`lib/mail.ts`** ที่เดียว (`sendVerificationMail` / `sendResetPasswordMail`)
 ส่งผ่าน Resend HTTP API ด้วย `fetch` — ไม่เพิ่ม dependency · `lib/auth.ts` เป็นแค่ผู้เรียก
@@ -35,9 +36,12 @@ POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **M
 
 - **ห้ามพิมพ์ลิงก์ยืนยัน/รีเซ็ตรหัสผ่านลง log บน production** — ลิงก์คือ credential ชั่วคราว
 - อีเมลใช้ **inline style + สี hex ดิบ** โดยตั้งใจ (mail client ไม่รองรับ `var()`) เป็นข้อยกเว้นเดียวของกติกาสี
-- สมัครสมาชิกแล้ว **ต้องยืนยันอีเมลก่อนถึงล็อกอินได้** (`requireEmailVerification: true`) —
-  ล็อกอินก่อนยืนยันจะได้ 403 code `EMAIL_NOT_VERIFIED` ซึ่งหน้า `/login` ต้องดักไว้
-- ปลายทางหลังกดลิงก์ในอีเมลคือหน้า `/verify-email` (public path ใน `proxy.ts`)
+- สมัครสมาชิกแล้ว **ต้องยืนยันอีเมลก่อนถึงล็อกอินได้** (`requireEmailVerification: true` — เปิดแล้ว) —
+  ล็อกอินก่อนยืนยันได้ 403 code `EMAIL_NOT_VERIFIED` ซึ่งหน้า `/login` ดักไว้แล้วพร้อมปุ่มส่งอีเมลซ้ำ
+- ปลายทางหลังกดลิงก์ในอีเมลคือหน้า `/verify-email` (public path ใน `proxy.ts` แล้ว) —
+  `lib/auth.ts` เขียนทับ `callbackURL` ของ Better Auth ให้ชี้มาหน้านี้ ไม่งั้นผู้ใช้ถูกโยนไปหน้าแรก
+  แล้วเดาเองว่ายืนยันสำเร็จหรือไม่
+- ฟังก์ชันส่งอีเมลคืน `MailResult` ไม่ throw — ส่งไม่สำเร็จให้ log ไว้ ห้ามทำให้คำขอของผู้ใช้ล้มทั้งก้อน
 
 ## กติกาที่ห้ามละเมิด
 
@@ -255,8 +259,7 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 
 ## สถานะการพัฒนา
 
-**✅ Phase 1 (Foundation), Phase 2 (Core Features) และ Phase 2.5 (POS Module) ปิดครบแล้ว** —
-checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสาม Phase
+**✅ ปิดครบแล้ว: Phase 1–4, 2.5, 6–10 และ 12** — checkbox ใน `Docs/spec.md` ติ๊กครบทุก Phase เหล่านี้
 
 ของที่ใช้งานได้จริงตอนนี้:
 - Auth ครบวงจร: สมัคร / เข้าสู่ระบบ / ลืมรหัสผ่าน / ตั้งรหัสผ่านใหม่ / เปลี่ยนรหัสผ่าน + `proxy.ts` กันทุกหน้า
@@ -265,9 +268,16 @@ checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสาม Phase
 - **MJD Mobile Order**: ผังโต๊ะ `/mobile-order/tables` (เปิด/รวม/ยกเลิกโต๊ะ + เวลาเปิดโต๊ะคำนวณสด),
   `/mobile-order/notifications`, `/mobile-order/kitchen` (KDS 3 คอลัมน์), `/mobile-order/qr-codes`,
   `/mobile-order/tables/[tableId]` (ยกเลิกรายการได้เฉพาะที่ครัวยังไม่เริ่มทำ),
-  `/mobile-order/tables/[tableId]/billing` (ปิดบิล + ค่าบริการ + ใบเสร็จพิมพ์ได้) และฝั่งลูกค้า
+  `/mobile-order/tables/[tableId]/billing` (ปิดบิล + ค่าบริการ + ใบเสร็จพิมพ์ได้),
+  `/mobile-order/settings` (ชื่อร้าน/โลโก้/ปก/สีธีม/ค่าบริการ/เมนูแนะนำ/สลับ KDS/เปิด-ปิดระบบสมาชิก)
+  และฝั่งลูกค้า
   `/order/[qrToken]/*` (เมนู → ปรับแต่ง → ตะกร้า → ยืนยัน → ติดตามสถานะ → เรียกพนักงาน/เช็กบิล →
   ชำระเงินพร้อมเพย์/บัตร → ปิดบิลอัตโนมัติ)
+- **ทิกเก็ตครัวแบบ PDF**: `/tickets/[orderId]` (เปิด `?auto=1` เด้งกล่องพิมพ์ให้เลย แล้วเลือกเครื่องพิมพ์
+  เป็น “Microsoft Print to PDF” / “Save as PDF”) · ปุ่มอยู่บน KDS และหน้ารายละเอียดโต๊ะ ·
+  ไดรเวอร์ ESC/POS เดิมที่ `lib/kitchen-printer.ts` ยังใช้ได้ทันทีที่ตั้ง `KITCHEN_PRINTER_HOST`
+- **สมาชิกสะสมแต้ม**: ฟอร์มสมัครด้วยเบอร์โทรบนหน้า `pay/success` (เฉพาะร้านที่เปิด `crmEnabled`)
+  1 แต้ม/25 บาท (`lib/points.ts`) · ให้แต้มครั้งเดียวต่อบิลด้วย unique `MemberPointTransaction.saleId`
 - **ชำระเงิน MJD Mobile Order**: `POST /api/payments/webhook` (idempotent ด้วย `Sale.paymentReference`
   ที่ unique) + `lib/close-session.ts` ที่ทั้ง webhook และพนักงานกดยืนยันใช้ร่วมกัน · payload พร้อมเพย์
   สร้างเองที่ `lib/promptpay.ts` (env `PROMPTPAY_ID`) · เปิดเส้นทางอัตโนมัติด้วย `PAYMENT_WEBHOOK_SECRET`
@@ -278,19 +288,26 @@ checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสาม Phase
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
   seed ไว้ 7 รายการ SKU-1001…SKU-1007 + บิลตัวอย่าง 8 บิล
 
-**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 12 (แบรนด์ + CRM) · Phase 3–5 ทำไปบางส่วน (ดูด้านล่าง) —
+**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 5 เหลือเฉพาะงานที่ต้องลงมือบน VPS (ดูด้านล่าง) —
 ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
 **✅ deploy ขึ้น production แล้ว (2026-09-02): https://posqr.jayjayservices.com**
 CI/CD อัตโนมัติจาก `main` ทำงานจริง — push → test → build+push image ไป `ghcr.io` → scp compose +
-`up -d` + `migrate deploy` บน VPS `138.252.93.119` (user `deploy`) · nginx + HTTPS (Let's Encrypt,
+`up -d` + `migrate deploy` (ตั้งแต่ Phase 5 เปลี่ยนเป็น pull → migrate → `ops/switch-deploy.sh`) บน VPS `138.252.93.119` (user `deploy`) · nginx + HTTPS (Let's Encrypt,
 ต่ออายุอัตโนมัติ) · PostgreSQL 18 ในคอนเทนเนอร์ `posmobileorder-db` · `/api/health` ตอบ 200
 
-**ยังเหลือใน Phase 5**: SSH hardening + UFW (`ops/setup-vps.sh` ยังไม่เคยรันบน VPS — password login
-ยังเปิดอยู่) · backup + rollback + health alert (`ops/` มีแค่ `setup-vps.sh`) · zero-downtime blue/green ·
-ต่อ Resend จริง (DNS พร้อมแล้ว แต่ `.env` บน server ยังไม่มี `RESEND_API_KEY`/`MAIL_FROM`) ·
-เปิดยืนยันอีเมลตอนสมัคร (`requireEmailVerification` ยังเป็น `false`)
-**ยังเหลือใน Phase 3–4**: post-edit hook + `.claude/settings.json` · `CONTRIBUTING.md` · PR template
+**ยังเหลือใน Phase 5 — โค้ดครบหมดแล้ว เหลือเฉพาะงานที่ต้องลงมือบน VPS:**
+
+| งาน | สคริปต์ที่พร้อมแล้ว | ที่ต้องทำบน VPS |
+|---|---|---|
+| SSH hardening + fail2ban + UFW | `ops/setup-vps.sh` | รันด้วยมือพร้อม public key จริง — **พลาดแล้วล็อกตัวเองออกได้** |
+| zero-downtime blue/green | `ops/setup-zero-downtime.sh` (ครั้งเดียว) + `ops/switch-deploy.sh` | รัน setup แล้วพิสูจน์ด้วย `ops/verify-zero-downtime.sh` (เกณฑ์: ล้ม 0 ครั้ง) |
+| rollback | `ops/rollback.sh` | ทดสอบสลับ `latest` ↔ `previous` |
+| health alert | `ops/health-alert.sh` + `ops/install-cron.sh` | ติดตั้ง cron แล้วทดสอบส่งจริงทั้งสองทิศทาง |
+| อีเมลจริง | `lib/mail.ts` (ต่อ Resend แล้ว) | เติม `RESEND_API_KEY` / `MAIL_FROM` / `ALERT_EMAIL` ลง `.env` |
+
+`requireEmailVerification` เปิดเป็น `true` แล้ว และมีหน้า `/verify-email` + ปุ่มส่งอีเมลยืนยันซ้ำบน `/login`
+— บัญชีที่สร้างด้วย `pnpm db:create-user` ถูกตั้ง `emailVerified = true` มาแล้วจึงล็อกอินได้ตามปกติ
 
 **ระบบสิทธิ์ตามบทบาท (Role-Based Permission) อยู่นอกขอบเขต v1** — เดิมคือ Phase 2.6 ปัจจุบันยกไปเป็น
 "Phase ถัดไป (ยังไม่กำหนดวัน)" ท้าย §8 ของ spec ห้ามเริ่มทำจนกว่า Phase 1–5 จะปิดครบและมีการอนุมัติขอบเขตใหม่
@@ -303,8 +320,8 @@ CI/CD อัตโนมัติจาก `main` ทำงานจริง �
 
 ## 🍽️ MJD Mobile Order (Phase 6–12)
 
-Channel ที่สอง (สั่งอาหารผ่าน QR Code สำหรับร้านอาหารแบบ table service) — **Phase 6–10 ทำเสร็จแล้ว
-เหลือ Phase 11 (LINE) กับ Phase 12 (แบรนด์ + CRM)** ทุกบิลของ Mobile Order ปิดลงตาราง
+Channel ที่สอง (สั่งอาหารผ่าน QR Code สำหรับร้านอาหารแบบ table service) — **Phase 6–10 และ 12 ทำเสร็จแล้ว
+เหลือ Phase 11 (LINE) อย่างเดียว** ทุกบิลของ Mobile Order ปิดลงตาราง
 `Sale`/`SaleItem` ที่สร้างใน Phase 2.5 — เอนทิตี `Table`, `TableSession`, `MenuItem`,
 `ModifierGroup`/`ModifierOption`, `MobileOrder`/`MobileOrderItem`, `QRCode`, `Notification`,
 `LineNotificationLog`, `StoreSettings`, `Member`/`MemberPointTransaction` และ route `/mobile-order/*`,
