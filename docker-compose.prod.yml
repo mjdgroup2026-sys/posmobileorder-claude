@@ -99,6 +99,11 @@ services:
     restart: "no"
     environment:
       <<: *db-url
+      # จำเป็นสำหรับ `pnpm db:create-user` ที่รันผ่าน service นี้ (image runner เป็น standalone
+      # build ไม่มี tsx จึงรันสคริปต์ไม่ได้) — better-auth จะ throw "You are using the default
+      # secret" ถ้าไม่มีค่านี้ · `prisma migrate deploy` เองไม่ได้ใช้ จึงใช้ :- ไม่ใช่ :?
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://posqr.jayjayservices.com}
     # ไม่ override command โดยตั้งใจ — ใช้ CMD ของ image คือ `prisma migrate deploy` ล้วน
     # ⚠️ ห้ามเติม `prisma db seed` แบบ compose ของ dev เด็ดขาด: seed จะเขียนข้อมูลตัวอย่าง
     # ทับฐาน production ทุกครั้งที่ deploy
