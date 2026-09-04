@@ -27,10 +27,24 @@ export function Topbar({ user, lowStockCount, pendingNotificationCount = 0 }: Pr
 
   async function handleSignOut() {
     setBusy(true)
-    await authClient.signOut()
+    try {
+      await authClient.signOut()
+    } catch {
+      // ★ ไม่มี try/catch มาก่อน — พอ signOut ล้ม ฟังก์ชันก็ throw ทิ้งไว้เฉย ๆ
+      //   busy ค้างเป็น true ตลอด ปุ่มเมนูผู้ใช้เลยถูก disable ถาวรจนกว่าจะรีเฟรชหน้า
+      //   ผู้ใช้เห็นเป็น "กดออกจากระบบไม่ได้" โดยไม่มีข้อความบอกอะไรเลย
+      toast.error("ออกจากระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+      setBusy(false)
+      return
+    }
+
     toast.success("ออกจากระบบแล้ว")
-    router.push("/login")
+    // refresh ก่อน push — ทิ้ง RSC payload ที่ถูก render ตอน "ยังล็อกอินอยู่" ออกจาก
+    // client router cache ก่อน ไม่งั้นมีจังหวะที่หน้าเดิมถูกเสิร์ฟจากแคชต่อ
+    // แล้วดูเหมือนออกจากระบบไม่สำเร็จทั้งที่ cookie ถูกล้างไปแล้ว
     router.refresh()
+    router.push("/login")
+    setBusy(false)
   }
 
   return (
