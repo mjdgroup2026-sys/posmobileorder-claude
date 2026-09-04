@@ -1161,7 +1161,17 @@ enum ResourceKey {
       เปลี่ยน `APP_TAG` ใน `.env` → pull (หรือใช้ image บนเครื่องถ้าดึงไม่ได้) → `up -d --wait` → เช็ก health
       ไม่ผ่านใน 60 วิ ย้อนค่ากลับให้เอง · CD เก็บ tag `:previous` ไว้ทุกครั้งจึงย้อนได้แม้ registry ล่ม
       · ทดสอบสลับ `latest` ↔ `previous` — health ต้องผ่านทั้งสองทาง
-- [ ] Monitoring: health check endpoint + alert เมื่อ service ล่ม — `/api/health` + `ops/health-alert.sh`
+- [x] Monitoring: health check endpoint + alert เมื่อ service ล่ม — `/api/health` + `ops/health-alert.sh`
+      > cron ทุก 5 นาทีทำงานอยู่จริงบน VPS · ทดสอบส่งอีเมลจริงผ่านครบทั้งสองทิศทาง (2026-09-04):
+      > ล้มครั้งแรกไม่เตือน → ล้มครั้งที่ 2 ส่ง `ปกติ→ล่ม` → กลับมา 200 ส่ง `ล่ม→ปกติ`
+      > ทดสอบด้วย `STATE_FILE`/`HEALTH_URL` แยก จึงไม่แตะ state ของ cron จริง
+      > 🐞 **เจอบั๊กจริงตอนทดสอบ**: `json_str()` ใน `lib-common.sh` ใช้ `s/$/\\n/` ซึ่ง sed มองว่า
+      > "ทุกบรรทัด" รวมบรรทัดสุดท้าย จึงเติม `\n` ต่อท้าย subject เสมอ แล้ว Resend ตอบ 422
+      > `The \\n is not allowed in the subject field` — **อีเมลแจ้งเตือนไม่เคยส่งออกได้เลย**
+      > ทั้งที่ทุกอย่างอื่นถูกหมด · host ไม่มี `node` (อยู่แต่ในคอนเทนเนอร์) เส้นทางที่ทำงานจริงจึงเป็น
+      > fallback sed เสมอ — เวลาแก้ต้องทดสอบเส้นทางนั้น ไม่ใช่เส้นทาง node
+      > ⚠️ `ALERT_EMAIL` บน server ยังชี้ที่อยู่ทดสอบของ Resend (`delivered@resend.dev`)
+      > ต้องเปลี่ยนเป็นกล่องจดหมายจริงของผู้ดูแลก่อนถือว่าใช้งานได้เต็มรูปแบบ
       > cron ทุก 5 นาทีทำงานอยู่จริงบน VPS แล้ว (log `ปกติ (HTTP 200)` ต่อเนื่อง)
       > ทดสอบตรรกะเปลี่ยนสถานะครบทั้งสองทิศทางด้วย `STATE_FILE`/`HEALTH_URL` แยก (ไม่แตะ state ของ cron จริง):
       > ล้มครั้งแรกไม่เตือน → ล้มครั้งที่ 2 เตือน `ปกติ→ล่ม` → กลับมา 200 เตือน `ล่ม→ปกติ`
@@ -1199,6 +1209,11 @@ enum ResourceKey {
             > จะเข้า junk — ต้องเพิ่ม TXT `v=spf1 include:amazonses.com -all` ที่ host ของโดเมนผู้ส่ง
             > แล้วรอชื่อเสียงโดเมนสะสม
       - [ ] เส้นทางอีเมลลืมรหัสผ่าน — `request-password-reset` ต้องตอบ 200 และ Resend รับงานโดยไม่มี error
+            > credential พร้อมแล้วและพิสูจน์แล้วว่าใช้ได้: ยิง `POST https://api.resend.com/emails` จาก
+            > production ตรง ๆ ได้ HTTP 200 + message id · DNS ตรวจจาก 8.8.8.8 ครบ (SPF `-all` ที่
+            > `mail.jayjayservices.com`, DKIM `resend._domainkey.mail`, MX return-path, DMARC `p=none`)
+            > **ติ๊กไม่ได้จนกว่าจะ merge** — image ที่รันบน production ตอนนี้ยังเป็นตัวเก่าที่
+            > `lib/mail.ts` ยัง throw "ยังไม่ได้ต่อ Resend" อยู่
       - [x] deploy ใหม่ไม่มี downtime — blue/green + `nginx -s reload` แบบ graceful
             (วัดจริง 2026-09-04: 36 คำขอ ล้ม 0 ครั้ง ตลอดช่วงสลับสี)
             (วัดระหว่างสลับสี: ทุกคำขอต้องผ่าน ล้ม 0 ครั้ง)

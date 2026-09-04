@@ -288,7 +288,7 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
   seed ไว้ 7 รายการ SKU-1001…SKU-1007 + บิลตัวอย่าง 8 บิล
 
-**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 5 เหลือเฉพาะการส่งอีเมลจริง (รอ `RESEND_API_KEY`) —
+**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 5 เหลือ smoke test เต็มรูปแบบบน production ซึ่งต้อง merge ก่อน —
 ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
 > ⚠️ **production ยังรัน schema เก่า (Phase 1–2)** — branch `feat/pos-and-mobile-order` ยังไม่ merge
@@ -308,8 +308,16 @@ CI/CD อัตโนมัติจาก `main` ทำงานจริง �
 | UFW | ✅ `active` เปิดเฉพาะ OpenSSH / 80 / 443 |
 | zero-downtime blue/green | ✅ วัดจริง **36 คำขอ ล้ม 0 ครั้ง** ตอนสลับสี |
 | rollback | ✅ `latest` ↔ `previous` ผ่านทั้งสองทาง แบบไม่มี downtime |
-| health alert | ⚠️ cron ทำงาน + ตรรกะเปลี่ยนสถานะผ่านทั้งสองทิศทาง · **ส่งอีเมลจริงยังไม่ได้ทดสอบ** (ยังไม่มี key) |
-| อีเมลจริง | ⚠️ `lib/mail.ts` ต่อ Resend แล้ว · **`.env` บน server ยังไม่มี `RESEND_API_KEY`/`MAIL_FROM`/`ALERT_EMAIL`** |
+| health alert | ✅ cron ทำงาน + **ส่งอีเมลจริงผ่านครบทั้งสองทิศทาง** (ปกติ→ล่ม, ล่ม→ปกติ) |
+| อีเมลจริง | ✅ `.env` บน server มี `RESEND_API_KEY`/`MAIL_FROM` แล้ว · ยิง Resend ตรง ๆ ได้ 200 + message id |
+
+> ⚠️ `ALERT_EMAIL` ยังเป็น `delivered@resend.dev` (ที่อยู่ทดสอบของ Resend ที่กลืนอีเมลทิ้ง)
+> **ต้องเปลี่ยนเป็นกล่องจดหมายจริงของผู้ดูแล** ไม่งั้นเวลา service ล่มจริงจะไม่มีใครรู้
+
+> 🐞 **กับดักที่เจอจริง**: host ของ VPS **ไม่มี `node`** (อยู่แต่ในคอนเทนเนอร์ของแอป) `json_str()`
+> ใน `ops/lib-common.sh` จึงตกไปใช้ fallback sed เสมอ — ของเดิมใช้ `s/$/\\n/` ที่ sed มองว่า
+> "ทุกบรรทัด" รวมบรรทัดสุดท้าย เลยเติม `\n` ต่อท้าย subject ทำให้ Resend ตอบ 422 และ
+> **อีเมลแจ้งเตือนไม่เคยส่งออกได้เลย** · แก้แล้ว แต่เวลาแตะสคริปต์ ops ต้องทดสอบเส้นทาง sed เสมอ
 
 **สถาปัตยกรรมบน VPS หลัง Phase 5:** แอปรันสองสีสลับกัน `posmobileorder-app-blue` (127.0.0.1:3001) /
 `posmobileorder-app-green` (3002) · nginx ชี้ผ่าน `upstream pos_app` ใน `/etc/nginx/conf.d/pos-upstream.conf`
