@@ -17,7 +17,10 @@ type Column = {
   action?: { label: string; className: string; run: (formData: FormData) => Promise<unknown> }
 }
 
-export function KitchenDisplay({ tickets, hasKDS }: { tickets: KitchenTicket[]; hasKDS: boolean }) {
+/// กระดาน 3 คอลัมน์ของครัว — ใช้เฉพาะร้านที่เปิด `hasKDS` เท่านั้น
+/// ร้านที่ปิดไว้ถูกกันตั้งแต่ที่หน้า (app/(staff)/(app)/mobile-order/kitchen/page.tsx)
+/// จึงไม่ต้องมีสาขาโหมดไม่มี KDS ในนี้อีก
+export function KitchenDisplay({ tickets }: { tickets: KitchenTicket[] }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
 
@@ -26,9 +29,7 @@ export function KitchenDisplay({ tickets, hasKDS }: { tickets: KitchenTicket[]; 
       key: "AWAITING_KITCHEN",
       title: "ออร์เดอร์ใหม่",
       chip: "chip-danger",
-      action: hasKDS
-        ? { label: "เริ่มปรุง", className: "btn btn-primary btn-sm btn-block", run: startCookingOrder }
-        : { label: "เสิร์ฟอาหารแล้ว", className: "btn btn-primary btn-sm btn-block", run: markOrderServed },
+      action: { label: "เริ่มปรุง", className: "btn btn-primary btn-sm btn-block", run: startCookingOrder },
     },
     {
       key: "COOKING",
@@ -104,9 +105,7 @@ export function KitchenDisplay({ tickets, hasKDS }: { tickets: KitchenTicket[]; 
             </span>
           </h1>
           <p className="t-body" style={{ marginTop: 4 }}>
-            {hasKDS
-              ? "หน้าจอครัว — กดเริ่มปรุงเมื่อรับออร์เดอร์ และกดทำเสร็จเมื่อพร้อมเสิร์ฟ"
-              : "ร้านนี้ปิดใช้งาน KDS อยู่ — กด “เสิร์ฟอาหารแล้ว” ได้เลยเมื่ออาหารถึงโต๊ะ"}
+            หน้าจอครัว — กดเริ่มปรุงเมื่อรับออร์เดอร์ และกดทำเสร็จเมื่อพร้อมเสิร์ฟ
           </p>
         </div>
         {pending ? <IconSpinner size={20} className="animate-spin" aria-hidden /> : null}
@@ -116,17 +115,6 @@ export function KitchenDisplay({ tickets, hasKDS }: { tickets: KitchenTicket[]; 
         {columns.map((column) => {
           const columnTickets = ticketsFor(column.key)
           const itemCount = columnTickets.reduce((sum, t) => sum + t.items.length, 0)
-
-          if (!hasKDS && column.key !== "AWAITING_KITCHEN") {
-            return (
-              <section key={column.key} className="card-ui card-pad">
-                <h2 className="t-h3">{column.title}</h2>
-                <p className="t-caption" style={{ marginTop: 8 }}>
-                  ไม่ใช้ในโหมดไม่มี KDS
-                </p>
-              </section>
-            )
-          }
 
           const action = column.action
 
