@@ -254,6 +254,13 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 - 🔥 **บัญชี credential ของ Better Auth ใช้ `accountId = user.id` และ `issuer = local:credential`**
   (ไม่ใช่อีเมล) — insert ตาราง `account` เองด้วยอีเมลจะสร้างได้แต่ล็อกอินไม่ผ่าน ตอบ `INVALID_EMAIL_OR_PASSWORD`
   เงียบ ๆ · สร้างบัญชีด้วย `pnpm db:create-user` ที่เรียก `internalAdapter` ของ Better Auth เท่านั้น
+- 🔥 **`docker compose --profile X pull` ดึงเฉพาะ service ที่อยู่ใน profile ที่เปิดไว้เท่านั้น** —
+  พอแยกแอปเป็น `app-blue`/`app-green` ใต้ profile ของตัวเอง คำสั่งเดิม `--profile tools pull`
+  เลยได้แค่ `db` กับ `migrate` ส่วน image ของแอปไม่เคยถูกดึง · ผลคือ deploy "สำเร็จ" ทุกขั้น
+  migration ขึ้นครบ health ตอบ 200 แต่แอปรัน **โค้ดเก่าทับ schema ใหม่** → 500 ทุกหน้าที่แตะฐาน
+  และ 404 ทุก route ใหม่ · `/api/health` แค่ ping ฐานจึงรอดด่านนี้ไปได้ **ต้องล็อกอินเข้าไปกดจริง
+  ถึงจะเจอ** · แก้แล้วสองชั้น: CI ระบุ profile ครบทุกตัว และ `switch-deploy.sh` ดึง image
+  ของสีเป้าหมายเองก่อนสตาร์ตเสมอ (step 0/6)
 - **image `:latest-migrate` ต้อง build จาก stage `migrator` เท่านั้น** — stage `deps` ไม่มี `prisma/`
   ทำให้ `prisma migrate deploy` ฟ้อง "Could not find Prisma Schema" แล้ว deploy "สำเร็จ" ทั้งที่ DB ไม่มีตาราง
 

@@ -1207,10 +1207,16 @@ enum ResourceKey {
       - [x] เข้าผ่าน HTTPS ได้ (HTTP → HTTPS 301, cert Let's Encrypt ต่ออายุอัตโนมัติ)
       - [x] กู้คืนจาก backup ได้ — ซ้อมด้วย `restore-db.sh --drill` ต้องกู้ครบทุกตารางโดยไม่แตะฐานจริง
       - [ ] สมัครสมาชิกแล้วได้รับอีเมลยืนยันจริงและยืนยันสำเร็จ (`emailVerified = true` ใน production)
+            > ⛔ **ทดสอบตามข้อนี้ไม่ได้ใน v1 โดยตั้งใจ** — `disableSignUp: true` ปิดการสมัครเองไว้
+            > บัญชีทั้งหมดสร้างด้วย `pnpm db:create-user` ซึ่งตั้ง `emailVerified = true` มาแล้ว
+            > กลไกส่งอีเมลตัวเดียวกัน (`deliver()` → Resend) พิสูจน์แล้วผ่านเส้นทางลืมรหัสผ่านข้างบน
+            > จะติ๊กข้อนี้ได้ต่อเมื่อเปิดสมัครเองพร้อม invite/allowlist ในเฟสถัดไป
             > ⚠️ กับดัก: ถ้าโดเมนผู้ส่งยังไม่มีเรคคอร์ดของตัวเองใน DNS (query แล้วได้ NXDOMAIN) อีเมล
             > จะเข้า junk — ต้องเพิ่ม TXT `v=spf1 include:amazonses.com -all` ที่ host ของโดเมนผู้ส่ง
             > แล้วรอชื่อเสียงโดเมนสะสม
-      - [ ] เส้นทางอีเมลลืมรหัสผ่าน — `request-password-reset` ต้องตอบ 200 และ Resend รับงานโดยไม่มี error
+      - [x] เส้นทางอีเมลลืมรหัสผ่าน — `request-password-reset` ต้องตอบ 200 และ Resend รับงานโดยไม่มี error
+            > ทดสอบบน production แล้ว (2026-09-04): HTTP 200 และ log ของแอปไม่มีบรรทัด
+            > `[mail] ส่งอีเมลตั้งรหัสผ่านใหม่ไม่สำเร็จ` แปลว่า `deliver()` ได้ 2xx จาก Resend
             > credential พร้อมแล้วและพิสูจน์แล้วว่าใช้ได้: ยิง `POST https://api.resend.com/emails` จาก
             > production ตรง ๆ ได้ HTTP 200 + message id · DNS ตรวจจาก 8.8.8.8 ครบ (SPF `-all` ที่
             > `mail.jayjayservices.com`, DKIM `resend._domainkey.mail`, MX return-path, DMARC `p=none`)
@@ -1220,7 +1226,12 @@ enum ResourceKey {
             (วัดจริง 2026-09-04: 36 คำขอ ล้ม 0 ครั้ง ตลอดช่วงสลับสี)
             (วัดระหว่างสลับสี: ทุกคำขอต้องผ่าน ล้ม 0 ครั้ง)
       - [x] backup เก็บนอกเครื่อง — ดึงลงเครื่อง Windows ทุกวัน 20:00 (ข้อจำกัด: เฉพาะตอนเปิดเครื่อง)
-      - [ ] ทดสอบระบบเต็มรูปแบบบน production: หน้าสาธารณะต้องตอบ 200 ·
+      - [x] ทดสอบระบบเต็มรูปแบบบน production: หน้าสาธารณะต้องตอบ 200 ·
+            หน้าในระบบต้องเด้งไป `/login?callbackUrl=…` เมื่อยังไม่ล็อกอิน ·
+            ล็อกอินแล้วต้องเข้าได้ครบทุกหน้าและ render ภาษาไทยครบ
+            > ทดสอบด้วย session จริง (2026-09-04): 16 หน้าตอบ 200 ครบและมีภาษาไทยทุกหน้า —
+            > `/`, products, categories, stock-in/out, reports, users, settings, pos ทั้ง 3 หน้า
+            > และ mobile-order ทั้ง 5 หน้า · ยังไม่ล็อกอิน → 307 ไป `/login?callbackUrl=…` ทุกหน้า
             หน้าในระบบต้องเด้งไป `/login?callbackUrl=…` เมื่อยังไม่ล็อกอิน ·
             ล็อกอินแล้วต้องเข้าได้ครบทุกหน้า (dashboard, pos, pos/history, pos/closing, products,
             categories, stock-in, stock-out, reports, users, settings + หน้า MJD Mobile Order
