@@ -55,6 +55,17 @@ abort_new_color() {
   docker compose -f "$COMPOSE_FILE" --profile "$TARGET" rm -f "app-${TARGET}" > /dev/null 2>&1 || true
 }
 
+# ★ ดึง image ของ tag ที่จะใช้ก่อนเสมอ — กันเคสที่ image บนเครื่องเป็นของเก่าค้างอยู่
+#   (เคยเกิดจริง: CI สั่ง `--profile tools pull` ซึ่งครอบแค่ db กับ migrate ส่วน app-blue/green
+#   อยู่คนละ profile จึงไม่ถูกดึง แล้วสลับสีไปรันโค้ดเก่าทับ schema ใหม่ → 500 ทั้งเว็บ)
+#   ล้มก็ไม่เป็นไร — ops/rollback.sh ต้องย้อนได้แม้ registry ล่ม จึงห้ามทำให้ทั้งสคริปต์ตาย
+step "0/6 ดึง image ของ APP_TAG=$(env_get APP_TAG latest) ให้เป็นตัวล่าสุด"
+if docker compose -f "$COMPOSE_FILE" --profile "$TARGET" pull "app-${TARGET}" > /dev/null 2>&1; then
+  ok "ดึงจาก registry สำเร็จ"
+else
+  warn "ดึงจาก registry ไม่ได้ — ใช้ image ที่มีอยู่บนเครื่องต่อ (ปกติสำหรับ rollback ตอน registry ล่ม)"
+fi
+
 step "1/6 สตาร์ตสี ${TARGET} (พอร์ต ${TARGET_PORT})"
 if ! docker compose -f "$COMPOSE_FILE" --profile "$TARGET" up -d --wait --wait-timeout 120 "app-${TARGET}" > /dev/null 2>&1; then
   warn "compose ไม่รายงานว่า healthy ใน 120 วินาที — ตรวจ health ต่อเองอีกชั้น"

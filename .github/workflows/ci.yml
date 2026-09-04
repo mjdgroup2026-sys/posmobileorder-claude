@@ -174,7 +174,13 @@ jobs:
 
             # ⚠️ ลำดับสำคัญ: pull → migrate → **ค่อย** สลับสี
             #    ถ้าสลับก่อน migrate โค้ดใหม่จะเจอ schema เก่าในช่วงคาบเกี่ยว แล้ว 500 ใส่ลูกค้า
-            docker compose -f docker-compose.prod.yml --profile tools pull
+            #
+            # ⚠️ ต้องระบุ profile ให้ครบทั้ง tools/blue/green — compose ดึงเฉพาะ service ที่อยู่ใน
+            #    profile ที่เปิดไว้เท่านั้น · เขียนแค่ --profile tools จะได้แค่ db กับ migrate
+            #    ส่วน image ของแอป (app-blue/app-green) ไม่ถูกดึงเลย แล้ว switch-deploy.sh
+            #    ก็สตาร์ตด้วย image เก่าที่ค้างบนเครื่อง = โค้ดเก่าเจอ schema ใหม่ → 500 ทั้งเว็บ
+            #    (เกิดจริงตอน deploy รอบแรกหลังแยก blue/green)
+            docker compose -f docker-compose.prod.yml --profile tools --profile blue --profile green pull
 
             # db ต้องขึ้นก่อน migrate — สั่งเฉพาะ service นี้ ไม่แตะสีที่รับ traffic อยู่
             # ⚠️ ห้ามใส่ --remove-orphans: สีที่กำลังให้บริการอยู่คนละ profile จะถูกนับเป็น
