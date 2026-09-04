@@ -43,7 +43,7 @@ echo "════════════════════════�
 
 # ── 1) สร้าง user deploy และเพิ่มเข้ากลุ่ม sudo ──────────────────────────────
 # ตั้งรหัสผ่านเป็น locked ตั้งแต่ต้น — เครื่องนี้จะล็อกอินด้วย key อย่างเดียว
-# ผลข้างเคียง: ไม่มีรหัสผ่านให้พิมพ์ตอน sudo จึงต้องเปิด NOPASSWD ให้ (ท้ายขั้นตอนนี้)
+# ผลข้างเคียง: ไม่มีรหัสผ่านให้พิมพ์ตอน sudo · ดูวิธีจัดการที่ท้ายขั้นตอนนี้
 step "1/7 สร้างผู้ใช้ ${DEPLOY_USER} และให้สิทธิ์ sudo"
 if id -u "$DEPLOY_USER" > /dev/null 2>&1; then
   ok "มีผู้ใช้ ${DEPLOY_USER} อยู่แล้ว ข้ามการสร้าง"
@@ -55,16 +55,31 @@ fi
 usermod -aG sudo "$DEPLOY_USER"
 ok "เพิ่ม ${DEPLOY_USER} เข้ากลุ่ม sudo แล้ว"
 
-# ⚠️ NOPASSWD จำเป็นเพราะบัญชีนี้ไม่มีรหัสผ่าน ถ้าไม่เปิดจะ sudo ไม่ได้เลย
-# อยากปลอดภัยกว่านี้: ตั้งรหัสผ่านด้วย `passwd deploy` แล้วลบไฟล์นี้ทิ้ง
+# ⚠️ `${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL` = ใครได้ SSH key ของบัญชีนี้ไปก็ได้ root ทันที
+# โดยไม่ต้องรู้ความลับอะไรเพิ่มอีกเลย · key ตัวเดียวกันนี้เก็บอยู่ใน GitHub Secrets ของ CI ด้วย
+# จึงเปิดให้ **เฉพาะตอนที่บัญชีไม่มีรหัสผ่าน** ซึ่งเป็นกรณีเดียวที่ไม่เปิดแล้ว sudo ไม่ได้เลย
+#
+# งานประจำวันของ deploy ไม่ต้องใช้ root กว้าง ๆ อยู่แล้ว:
+#   - docker ใช้ผ่านกลุ่ม docker (ไม่ต้อง sudo)
+#   - nginx reload ตอน deploy ใช้ NOPASSWD เฉพาะคำสั่ง ที่ ops/setup-zero-downtime.sh เขียนให้
+PW_STATUS="$(passwd -S "$DEPLOY_USER" 2>/dev/null | awk '{print $2}')"
+
 if [ -f "/etc/sudoers.d/90-${DEPLOY_USER}" ]; then
-  ok "ตั้งค่า sudoers ของ ${DEPLOY_USER} ไว้แล้ว"
+  ok "ตั้งค่า sudoers ของ ${DEPLOY_USER} ไว้แล้ว ไม่แตะซ้ำ"
+  if [ "$PW_STATUS" = "P" ]; then
+    warn "บัญชีนี้ตั้งรหัสผ่านไว้แล้ว จึงไม่จำเป็นต้องมี NOPASSWD:ALL อีก"
+    warn "แนะนำให้ลบทิ้งเพื่อลดความเสี่ยง: sudo rm /etc/sudoers.d/90-${DEPLOY_USER}"
+  fi
+elif [ "$PW_STATUS" = "P" ]; then
+  # มีรหัสผ่านให้พิมพ์อยู่แล้ว — ไม่ต้องเปิดประตูหลังให้ใครก็ตามที่ถือ key
+  ok "บัญชีมีรหัสผ่านอยู่แล้ว — ใช้ sudo แบบใส่รหัสผ่านตามปกติ (ไม่เปิด NOPASSWD:ALL)"
 else
   echo "${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-${DEPLOY_USER}"
   chmod 440 "/etc/sudoers.d/90-${DEPLOY_USER}"
   # ตรวจไวยากรณ์ทันที — sudoers พังแล้วใช้ sudo ไม่ได้ทั้งเครื่อง
   visudo -c > /dev/null || fail "sudoers ผิดรูปแบบ"
-  ok "เปิด sudo แบบไม่ต้องใส่รหัสผ่านให้ ${DEPLOY_USER}"
+  ok "เปิด sudo แบบไม่ต้องใส่รหัสผ่านให้ ${DEPLOY_USER} (บัญชีไม่มีรหัสผ่าน จึงจำเป็น)"
+  warn "ควรรัดกุมขึ้นเมื่อสะดวก: sudo passwd ${DEPLOY_USER} แล้ว sudo rm /etc/sudoers.d/90-${DEPLOY_USER}"
 fi
 
 # ── 2) สร้าง ~/.ssh และวาง public key ลง authorized_keys ────────────────────

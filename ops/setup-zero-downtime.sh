@@ -64,13 +64,17 @@ fi
 # ── 3) sudoers ──────────────────────────────────────────────────────────────
 step "3/4 เปิด sudo NOPASSWD เฉพาะ nginx -t / nginx -s reload ให้ ${DEPLOY_USER}"
 NGINX_BIN="$(command -v nginx)"
+# Ubuntu ทำ usrmerge แล้ว /bin/cp เป็น symlink ไป /usr/bin/cp — sudoers เทียบ path แบบตรงตัว
+# ถ้าเขียน /bin/cp ไว้แต่ sudo resolve เป็น /usr/bin/cp จะไม่ match แล้ว NOPASSWD ไม่ทำงาน
+TEE_BIN="$(command -v tee)"
+CP_BIN="$(command -v cp)"
 cat > "${SUDOERS}.tmp" <<EOF
 # ให้ deploy สั่ง reload nginx จาก CI ได้โดยไม่ต้องใส่รหัสผ่าน
 # จำกัดเฉพาะสองคำสั่งนี้เท่านั้น — 'nginx' แบบไม่จำกัด argument เปิดทาง -c ให้โหลด
 # config ที่ไหนก็ได้ ซึ่งเท่ากับยกสิทธิ์ root เต็มใบ
 ${DEPLOY_USER} ALL=(root) NOPASSWD: ${NGINX_BIN} -t, ${NGINX_BIN} -s reload
-${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/tee ${NGINX_UPSTREAM_CONF}
-${DEPLOY_USER} ALL=(root) NOPASSWD: /bin/cp /tmp/pos-upstream.before-switch.conf ${NGINX_UPSTREAM_CONF}
+${DEPLOY_USER} ALL=(root) NOPASSWD: ${TEE_BIN} ${NGINX_UPSTREAM_CONF}
+${DEPLOY_USER} ALL=(root) NOPASSWD: ${CP_BIN} /tmp/pos-upstream.before-switch.conf ${NGINX_UPSTREAM_CONF}
 EOF
 # visudo -c กันไฟล์พังทำให้ sudo ทั้งเครื่องใช้ไม่ได้ — ตรวจก่อนย้ายเข้าที่จริงเสมอ
 if visudo -cf "${SUDOERS}.tmp" > /dev/null 2>&1; then

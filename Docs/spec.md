@@ -1094,7 +1094,13 @@ enum ResourceKey {
 ### ⏭️ Phase 5 — Production (วันที่ 5)
 นำขึ้น production พร้อมความปลอดภัยและการดูแล
 
-- [ ] Deploy บน VPS Ubuntu: SSH hardening (ปิด password login, key-only), สร้าง user ไม่ใช่ root
+- [x] Deploy บน VPS Ubuntu: SSH hardening (ปิด password login, key-only), สร้าง user ไม่ใช่ root
+      > รัน `ops/setup-vps.sh` บน VPS แล้ว (2026-09-04) · ตรวจจากภายนอกผ่านทั้งสองเงื่อนไข:
+      > ล็อกอินด้วย key ได้ปกติ และ `ssh -o PubkeyAuthentication=no` ได้ `Permission denied (publickey)`
+      > · `sshd -T` ยืนยัน `permitrootlogin no` + `passwordauthentication no` · fail2ban `active`
+      > ⚠️ สคริปต์เดิมเขียน `/etc/sudoers.d/90-deploy` เป็น `NOPASSWD:ALL` = ใครได้ SSH key
+      > (ซึ่งเก็บใน GitHub Secrets ของ CI ด้วย) ก็ได้ root ทันที — **ลบไฟล์นั้นออกแล้ว** และแก้สคริปต์
+      > ให้เปิด NOPASSWD:ALL เฉพาะตอนบัญชียังไม่มีรหัสผ่านเท่านั้น
       > 🔧 `ops/setup-vps.sh` ทำครบทั้ง user `deploy` + fail2ban + drop-in `01-hardening.conf` แล้ว
       > **แต่ยังไม่เคยรันบน VPS** — ต้องรันด้วยมือพร้อม public key จริง (พลาดแล้วล็อกตัวเองออกจากเครื่องได้)
       — ใช้ user `deploy` (ไม่ใช่ root) · เปิด fail2ban ให้ `active` · รัน `harden-ssh.sh`
@@ -1103,7 +1109,9 @@ enum ResourceKey {
       > `Include /etc/ssh/sshd_config.d/*.conf` ไว้บรรทัดบนสุดและ OpenSSH ใช้ "ค่าแรกที่เจอชนะ" —
       > ไฟล์ `60-cloudimg-settings.conf` ของผู้ให้บริการจึงชนะเสมอ ต้องวางไฟล์ที่เรียงมาก่อน
       > (`01-hardening.conf`) หรือปิดบรรทัดในไฟล์นั้นด้วย
-- [ ] UFW firewall (เปิดเฉพาะ 22/80/443) — `ufw` ต้องมีสถานะ `active/enabled` และตรวจจากภายนอกแล้ว
+- [x] UFW firewall (เปิดเฉพาะ 22/80/443) — `ufw` ต้องมีสถานะ `active/enabled` และตรวจจากภายนอกแล้ว
+      > `ufw status` = `active` เปิดเฉพาะ OpenSSH / 80/tcp / 443/tcp · `ss -tln` ยืนยันว่าแอปทั้งสองสี
+      > ผูกกับ 127.0.0.1 เท่านั้น และ postgres ไม่ map ออก host เลย จึงไม่ทะลุ UFW ผ่าน iptables ของ Docker
       > 🔧 อยู่ในขั้นที่ 4 ของ `ops/setup-vps.sh` แล้ว · **รันพร้อมกับ SSH hardening ข้างบน**
       > พอร์ตของแอปทั้งสองสีผูกกับ 127.0.0.1 อยู่แล้ว จึงไม่ทะลุ UFW ผ่าน iptables ของ Docker
       ต้องเปิดเฉพาะ 22/80/443 จริง (3000 และ 5432 ต้องปิด)
@@ -1114,7 +1122,13 @@ enum ResourceKey {
       gzip + cache `/_next/static` 1 ปี)
 - [x] HTTPS ด้วย Let's Encrypt (certbot) + auto-renew (cert `posqr.jayjayservices.com` ออกโดย Let's Encrypt,
       `/etc/cron.d/certbot` ต่ออายุอัตโนมัติ, HTTP → HTTPS 301)
-- [ ] CD อัตโนมัติ: pull image ใหม่ + **zero-downtime restart** — ปลดเงื่อนไข `vars.DEPLOY_ENABLED`
+- [x] CD อัตโนมัติ: pull image ใหม่ + **zero-downtime restart** — ปลดเงื่อนไข `vars.DEPLOY_ENABLED`
+      > ตั้งบน VPS แล้วด้วย `ops/setup-zero-downtime.sh` · `ops/verify-zero-downtime.sh` วัดจริงบน
+      > production: **36 คำขอ ล้ม 0 ครั้ง** ตลอดช่วงสลับ green → blue (2026-09-04)
+      > · sudoers แบบจำกัด (`nginx -t` / `-s reload` / `tee` upstream) พิสูจน์แล้วว่าพอสำหรับ CI
+      > หลังถอด `NOPASSWD:ALL` ออก · คอนเทนเนอร์เดิมชื่อ `posmobileorder-app` ถูกลบทิ้งแล้ว
+      > (ไม่งั้นจองพอร์ต 3001 ค้างจนสลับรอบถัดไปชนพอร์ต)
+      > **หมายเหตุ**: job `deploy` ของ CI จะได้วิ่งเส้นทางใหม่นี้ครั้งแรกตอน merge เข้า `main`
       > 🔧 **โค้ดครบแล้ว รอรันบน VPS**: `docker-compose.prod.yml` แยกเป็น `app-blue`/`app-green`
       > (profile ละสี ผูก 127.0.0.1 ทั้งคู่) · `ops/switch-deploy.sh` สลับสี · `ops/setup-zero-downtime.sh`
       > ตั้งเครื่องครั้งเดียว (upstream + sudoers เฉพาะ `nginx -t`/`-s reload` + `max-concurrent-downloads`)
@@ -1139,13 +1153,19 @@ enum ResourceKey {
       > ⚠️ สำเนาที่สองดึงได้ **เฉพาะตอนเปิดเครื่อง** ถ้าปิดคอมยาวจะได้เท่าที่ VPS ยังไม่หมุนทิ้ง (14 วัน)
       > ถ้าต้องการสำเนาที่ทำงานตลอดเวลา ติดตั้ง `rclone` แล้วตั้ง `BACKUP_REMOTE=` ใน `.env`
       > (ให้ `ops/backup-db.sh` รองรับ path นี้ไว้ตั้งแต่แรก เผื่อต่อปลายทาง S3/B2 ภายหลัง)
-- [ ] Rollback strategy: กลับไป image เวอร์ชันก่อนหน้าได้ — `ops/rollback.sh <tag>`
+- [x] Rollback strategy: กลับไป image เวอร์ชันก่อนหน้าได้ — `ops/rollback.sh <tag>`
+      > ทดสอบบน production แล้ว: `latest` → `previous` → `latest` ผ่านทั้งสองทาง health 200 ทุกครั้ง
+      > และย้อนแบบไม่มี downtime ด้วยเพราะเรียก `switch-deploy.sh` ต่อ (2026-09-04)
       > 🔧 สคริปต์พร้อมแล้ว และย้อนแบบไม่มี downtime ด้วย (เรียก `switch-deploy.sh` ต่อ)
       > **เหลือทดสอบสลับ `latest` ↔ `previous` บน VPS จริง — health ต้องผ่านทั้งสองทาง**
       เปลี่ยน `APP_TAG` ใน `.env` → pull (หรือใช้ image บนเครื่องถ้าดึงไม่ได้) → `up -d --wait` → เช็ก health
       ไม่ผ่านใน 60 วิ ย้อนค่ากลับให้เอง · CD เก็บ tag `:previous` ไว้ทุกครั้งจึงย้อนได้แม้ registry ล่ม
       · ทดสอบสลับ `latest` ↔ `previous` — health ต้องผ่านทั้งสองทาง
 - [ ] Monitoring: health check endpoint + alert เมื่อ service ล่ม — `/api/health` + `ops/health-alert.sh`
+      > cron ทุก 5 นาทีทำงานอยู่จริงบน VPS แล้ว (log `ปกติ (HTTP 200)` ต่อเนื่อง)
+      > ทดสอบตรรกะเปลี่ยนสถานะครบทั้งสองทิศทางด้วย `STATE_FILE`/`HEALTH_URL` แยก (ไม่แตะ state ของ cron จริง):
+      > ล้มครั้งแรกไม่เตือน → ล้มครั้งที่ 2 เตือน `ปกติ→ล่ม` → กลับมา 200 เตือน `ล่ม→ปกติ`
+      > **ติ๊กได้เมื่อเติม `RESEND_API_KEY`/`MAIL_FROM`/`ALERT_EMAIL` ลง `.env` บน server แล้วได้รับอีเมลจริง**
       > 🔧 สคริปต์พร้อมแล้ว (อ่านคอนเทนเนอร์ของสีที่รับ traffic อยู่ผ่าน `active_app_container`)
       > **เหลือติดตั้ง cron บน VPS แล้วทดสอบส่งจริงทั้งสองทิศทาง (ปกติ→ล่ม, ล่ม→ปกติ)**
       cron ทุก 5 นาที ส่งอีเมลผ่าน Resend **เฉพาะตอนสถานะเปลี่ยน** (ปกติ→ล่ม, ล่ม→ปกติ) ไม่สแปมซ้ำ
@@ -1179,7 +1199,8 @@ enum ResourceKey {
             > จะเข้า junk — ต้องเพิ่ม TXT `v=spf1 include:amazonses.com -all` ที่ host ของโดเมนผู้ส่ง
             > แล้วรอชื่อเสียงโดเมนสะสม
       - [ ] เส้นทางอีเมลลืมรหัสผ่าน — `request-password-reset` ต้องตอบ 200 และ Resend รับงานโดยไม่มี error
-      - [ ] deploy ใหม่ไม่มี downtime — blue/green + `nginx -s reload` แบบ graceful
+      - [x] deploy ใหม่ไม่มี downtime — blue/green + `nginx -s reload` แบบ graceful
+            (วัดจริง 2026-09-04: 36 คำขอ ล้ม 0 ครั้ง ตลอดช่วงสลับสี)
             (วัดระหว่างสลับสี: ทุกคำขอต้องผ่าน ล้ม 0 ครั้ง)
       - [x] backup เก็บนอกเครื่อง — ดึงลงเครื่อง Windows ทุกวัน 20:00 (ข้อจำกัด: เฉพาะตอนเปิดเครื่อง)
       - [ ] ทดสอบระบบเต็มรูปแบบบน production: หน้าสาธารณะต้องตอบ 200 ·

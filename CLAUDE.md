@@ -288,23 +288,37 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
   seed ไว้ 7 รายการ SKU-1001…SKU-1007 + บิลตัวอย่าง 8 บิล
 
-**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 5 เหลือเฉพาะงานที่ต้องลงมือบน VPS (ดูด้านล่าง) —
+**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 5 เหลือเฉพาะการส่งอีเมลจริง (รอ `RESEND_API_KEY`) —
 ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
+
+> ⚠️ **production ยังรัน schema เก่า (Phase 1–2)** — branch `feat/pos-and-mobile-order` ยังไม่ merge
+> เข้า `main` ฐานบน server จึงมีแค่ 7 ตารางและตาราง `user` ว่างเปล่า · POS/Mobile Order ทั้งหมด
+> จะขึ้น production ตอน merge ครั้งแรก (CI จะรัน `migrate deploy` ให้เอง)
 
 **✅ deploy ขึ้น production แล้ว (2026-09-02): https://posqr.jayjayservices.com**
 CI/CD อัตโนมัติจาก `main` ทำงานจริง — push → test → build+push image ไป `ghcr.io` → scp compose +
 `up -d` + `migrate deploy` (ตั้งแต่ Phase 5 เปลี่ยนเป็น pull → migrate → `ops/switch-deploy.sh`) บน VPS `138.252.93.119` (user `deploy`) · nginx + HTTPS (Let's Encrypt,
 ต่ออายุอัตโนมัติ) · PostgreSQL 18 ในคอนเทนเนอร์ `posmobileorder-db` · `/api/health` ตอบ 200
 
-**ยังเหลือใน Phase 5 — โค้ดครบหมดแล้ว เหลือเฉพาะงานที่ต้องลงมือบน VPS:**
+**✅ Phase 5 ทำบน VPS จริงแล้ว (2026-09-04)** — เหลือเฉพาะที่ต้องรอ API key:
 
-| งาน | สคริปต์ที่พร้อมแล้ว | ที่ต้องทำบน VPS |
-|---|---|---|
-| SSH hardening + fail2ban + UFW | `ops/setup-vps.sh` | รันด้วยมือพร้อม public key จริง — **พลาดแล้วล็อกตัวเองออกได้** |
-| zero-downtime blue/green | `ops/setup-zero-downtime.sh` (ครั้งเดียว) + `ops/switch-deploy.sh` | รัน setup แล้วพิสูจน์ด้วย `ops/verify-zero-downtime.sh` (เกณฑ์: ล้ม 0 ครั้ง) |
-| rollback | `ops/rollback.sh` | ทดสอบสลับ `latest` ↔ `previous` |
-| health alert | `ops/health-alert.sh` + `ops/install-cron.sh` | ติดตั้ง cron แล้วทดสอบส่งจริงทั้งสองทิศทาง |
-| อีเมลจริง | `lib/mail.ts` (ต่อ Resend แล้ว) | เติม `RESEND_API_KEY` / `MAIL_FROM` / `ALERT_EMAIL` ลง `.env` |
+| งาน | สถานะ |
+|---|---|
+| SSH hardening + fail2ban | ✅ `passwordauthentication no` + `permitrootlogin no` · ตรวจจากภายนอกแล้ว key เข้าได้ / password ถูกปฏิเสธ |
+| UFW | ✅ `active` เปิดเฉพาะ OpenSSH / 80 / 443 |
+| zero-downtime blue/green | ✅ วัดจริง **36 คำขอ ล้ม 0 ครั้ง** ตอนสลับสี |
+| rollback | ✅ `latest` ↔ `previous` ผ่านทั้งสองทาง แบบไม่มี downtime |
+| health alert | ⚠️ cron ทำงาน + ตรรกะเปลี่ยนสถานะผ่านทั้งสองทิศทาง · **ส่งอีเมลจริงยังไม่ได้ทดสอบ** (ยังไม่มี key) |
+| อีเมลจริง | ⚠️ `lib/mail.ts` ต่อ Resend แล้ว · **`.env` บน server ยังไม่มี `RESEND_API_KEY`/`MAIL_FROM`/`ALERT_EMAIL`** |
+
+**สถาปัตยกรรมบน VPS หลัง Phase 5:** แอปรันสองสีสลับกัน `posmobileorder-app-blue` (127.0.0.1:3001) /
+`posmobileorder-app-green` (3002) · nginx ชี้ผ่าน `upstream pos_app` ใน `/etc/nginx/conf.d/pos-upstream.conf`
+ที่ `ops/switch-deploy.sh` เขียนทับทุกครั้ง · คอนเทนเนอร์เดิมชื่อ `posmobileorder-app` **ไม่มีแล้ว**
+
+> ⚠️ **`deploy` ไม่มี `NOPASSWD:ALL` อีกแล้ว** — ไฟล์ `/etc/sudoers.d/90-deploy` ถูกลบทิ้ง (สำเนาอยู่ที่
+> `/root/90-deploy.removed-by-claude.bak`) เพราะใครได้ SSH key ของบัญชีนี้ไป — ซึ่งเก็บใน GitHub Secrets
+> ของ CI ด้วย — ก็ได้ root ทันทีโดยไม่ต้องรู้ความลับอะไรเพิ่ม · sudo ทั่วไปต้องใส่รหัสผ่านแล้ว
+> เหลือ NOPASSWD เฉพาะ 3 คำสั่งที่ CI ต้องใช้ (`nginx -t`, `nginx -s reload`, `tee` ไฟล์ upstream)
 
 `requireEmailVerification` เปิดเป็น `true` แล้ว และมีหน้า `/verify-email` + ปุ่มส่งอีเมลยืนยันซ้ำบน `/login`
 — บัญชีที่สร้างด้วย `pnpm db:create-user` ถูกตั้ง `emailVerified = true` มาแล้วจึงล็อกอินได้ตามปกติ
