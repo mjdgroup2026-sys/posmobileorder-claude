@@ -8,6 +8,10 @@ import {
   mergeTablesSchema,
   unmergeTableSchema,
   cancelSessionSchema,
+  createTableSchema,
+  bulkTableSchema,
+  renameTableSchema,
+  idSchema,
   firstIssueMessage,
   zodToFieldErrors,
 } from "@/lib/validation"
@@ -344,4 +348,178 @@ export async function cancelTableSession(formData: FormData): Promise<ActionResu
     if (error instanceof TableAbort) return { ok: false, ...error.failure }
     return { ok: false, error: "ยกเลิกโต๊ะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
   }
+}
+
+// ───────────────── จัดการโต๊ะ (master data) ─────────────────
+//
+// เดิมโต๊ะมาจาก `prisma/seed-mobile-order.ts` ทางเดียว — ร้านจริงต้องเพิ่ม/แก้/ลบเองได้
+// จึงเพิ่มชุด action นี้ให้หน้า /mobile-order/tables/manage
+
+/// โต๊ะที่ "ยุ่งอยู่" — ห้ามแก้รหัสหรือลบ เพราะรหัสถูกใช้อ้างบนทิกเก็ตครัวและใบเสร็จที่ออกไปแล้ว
+async function assertTableIdle(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  tableId: string,
+) {
+  const table = await tx.table.findUnique({
+    where: { id: tableId },
+    select: { code: true, status: true, primaryTableId: true, _count: { select: { mergedTables: true } } },
+  })
+  if (!table) throw new TableAbort({ error: "ไม่พบโต๊ะที่ต้องการแก้ไข" })
+
+  const live = await tx.tableSession.count({
+    where: { tableId, status: { in: LIVE_SESSION_STATUS } },
+  })
+  if (live > 0) throw new TableAbort({ error: `โต๊ะ ${table.code} กำลังเปิดอยู่ กรุณาปิดบิลก่อน` })
+  if (table.primaryTableId !== null) {
+    throw new TableAbort({ error: `โต๊ะ ${table.code} ถูกรวมกับโต๊ะอื่นอยู่ กรุณายกเลิกการรวมก่อน` })
+  }
+  if (table._count.mergedTables > 0) {
+    throw new TableAbort({ error: `โต๊ะ ${table.code} มีโต๊ะอื่นรวมอยู่ กรุณายกเลิกการรวมก่อน` })
+  }
+  return table
+}
+
+export async function createTable(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = createTableSchema.safeParse({ code: formData.get("code") })
+  if (!parsed.success) {
+    return { ok: false, error: firstIssueMessage(parsed.error), fieldErrors: zodToFieldErrors(parsed.error) }
+  }
+
+  try {
+    await prisma.table.create({ data: { code: parsed.data.code } })
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      return { ok: false, error: `มีโต๊ะรหัส ${parsed.data.code} อยู่แล้ว`, fieldErrors: { code: "รหัสนี้ซ้ำ" } }
+    }
+    return { ok: false, error: "เพิ่มโต๊ะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateTablePages()
+  revalidatePath("/mobile-order/tables/manage")
+  revalidatePath("/mobile-order/qr-codes")
+  return { ok: true, message: `เพิ่มโต๊ะ ${parsed.data.code} เรียบร้อยแล้ว` }
+}
+
+/// สร้างโต๊ะเป็นชุด — รหัสที่ซ้ำกับของเดิมถูกข้ามไป ไม่ล้มทั้งชุด
+/// (ร้านมักกดซ้ำเพื่อเติมโต๊ะที่ขาด การล้มทั้งชุดเพราะซ้ำ 1 ตัวคือพฤติกรรมที่น่ารำคาญ)
+export async function createTablesBulk(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = bulkTableSchema.safeParse({
+    prefix: formData.get("prefix") ?? "",
+    from: formData.get("from"),
+    to: formData.get("to"),
+  })
+  if (!parsed.success) {
+    return { ok: false, error: firstIssueMessage(parsed.error), fieldErrors: zodToFieldErrors(parsed.error) }
+  }
+
+  const { prefix, from, to } = parsed.data
+  // เติมศูนย์ให้เท่ากับจำนวนหลักของเลขท้ายสุด — T01..T16 ไม่ใช่ T1..T16 จะได้เรียงถูก
+  const width = String(to).length
+  const codes = Array.from({ length: to - from + 1 }, (_, i) => `${prefix}${String(from + i).padStart(width, "0")}`)
+
+  const existing = await prisma.table.findMany({ where: { code: { in: codes } }, select: { code: true } })
+  const taken = new Set(existing.map((t) => t.code))
+  const fresh = codes.filter((code) => !taken.has(code))
+
+  if (fresh.length === 0) {
+    return { ok: false, error: "รหัสโต๊ะทั้งหมดในช่วงนี้มีอยู่แล้ว" }
+  }
+
+  try {
+    await prisma.table.createMany({ data: fresh.map((code) => ({ code })), skipDuplicates: true })
+  } catch {
+    return { ok: false, error: "เพิ่มโต๊ะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateTablePages()
+  revalidatePath("/mobile-order/tables/manage")
+  revalidatePath("/mobile-order/qr-codes")
+  return {
+    ok: true,
+    message:
+      taken.size > 0
+        ? `เพิ่มโต๊ะ ${fresh.length} ตัว (ข้าม ${taken.size} ตัวที่มีอยู่แล้ว)`
+        : `เพิ่มโต๊ะ ${fresh.length} ตัวเรียบร้อยแล้ว`,
+  }
+}
+
+export async function renameTable(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = renameTableSchema.safeParse({ id: formData.get("id"), code: formData.get("code") })
+  if (!parsed.success) {
+    return { ok: false, error: firstIssueMessage(parsed.error), fieldErrors: zodToFieldErrors(parsed.error) }
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await assertTableIdle(tx, parsed.data.id)
+      await tx.table.update({ where: { id: parsed.data.id }, data: { code: parsed.data.code } })
+    })
+  } catch (error) {
+    if (error instanceof TableAbort) return { ok: false, ...error.failure }
+    if ((error as { code?: string }).code === "P2002") {
+      return { ok: false, error: `มีโต๊ะรหัส ${parsed.data.code} อยู่แล้ว`, fieldErrors: { code: "รหัสนี้ซ้ำ" } }
+    }
+    return { ok: false, error: "แก้รหัสโต๊ะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateTablePages()
+  revalidatePath("/mobile-order/tables/manage")
+  revalidatePath("/mobile-order/qr-codes")
+  return { ok: true, message: `เปลี่ยนรหัสโต๊ะเป็น ${parsed.data.code} แล้ว` }
+}
+
+export async function deleteTable(formData: FormData): Promise<ActionResult> {
+  try {
+    await requireUser()
+  } catch {
+    return { ok: false, error: AUTH_ERROR }
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") })
+  if (!parsed.success) return { ok: false, error: firstIssueMessage(parsed.error) }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const table = await assertTableIdle(tx, parsed.data.id)
+
+      // ★ มีประวัติการเปิดโต๊ะแล้วลบไม่ได้ — TableSession ผูกกับบิลที่ออกไปแล้ว
+      //   ลบทิ้งเท่ากับทำลายที่มาของยอดขาย · ให้เปลี่ยนรหัสแทนถ้าพิมพ์ผิด
+      const history = await tx.tableSession.count({ where: { tableId: parsed.data.id } })
+      if (history > 0) {
+        throw new TableAbort({
+          error: `ลบไม่ได้ — โต๊ะ ${table.code} เคยเปิดใช้งานมาแล้ว ${history} ครั้งและผูกกับบิลที่ออกไปแล้ว`,
+        })
+      }
+
+      // QR ของโต๊ะที่ยังไม่เคยใช้งานลบทิ้งพร้อมกันได้ ไม่มีบิลอ้างถึง
+      await tx.qRCode.deleteMany({ where: { tableId: parsed.data.id } })
+      await tx.table.delete({ where: { id: parsed.data.id } })
+    })
+  } catch (error) {
+    if (error instanceof TableAbort) return { ok: false, ...error.failure }
+    return { ok: false, error: "ลบโต๊ะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }
+  }
+
+  revalidateTablePages()
+  revalidatePath("/mobile-order/tables/manage")
+  revalidatePath("/mobile-order/qr-codes")
+  return { ok: true, message: "ลบโต๊ะเรียบร้อยแล้ว" }
 }

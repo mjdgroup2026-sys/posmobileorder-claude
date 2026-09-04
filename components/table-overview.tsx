@@ -164,7 +164,18 @@ export function TableOverview({ tables }: { tables: TableCard[] }) {
             เวลาเปิดโต๊ะและระยะเวลาที่เปิดคำนวณสดทุกนาทีจากเวลาที่ลูกค้าเริ่มใช้โต๊ะ
           </p>
         </div>
+        <Link href="/mobile-order/tables/manage" className="btn btn-subtle">
+          <IconTable size={17} aria-hidden />
+          จัดการโต๊ะ
+        </Link>
       </div>
+
+      {tables.length === 0 ? (
+        <div className="alert-banner warning">
+          ยังไม่มีโต๊ะในระบบ — ไปที่ <Link href="/mobile-order/tables/manage">จัดการโต๊ะ</Link> เพื่อเพิ่มโต๊ะก่อน
+          แล้วค่อยสร้าง QR Code ให้แต่ละโต๊ะ
+        </div>
+      ) : null}
 
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         {FILTERS.map((f) => (

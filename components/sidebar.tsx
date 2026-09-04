@@ -20,6 +20,7 @@ import {
   IconQr,
   IconStore,
   IconLock,
+  IconMenu,
 } from "@/components/icons"
 import type { ResourceKey } from "@/lib/permissions"
 
@@ -48,6 +49,8 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
       { href: "/mobile-order/tables", label: "ผังโต๊ะ", Icon: IconTable },
       { href: "/mobile-order/notifications", label: "การแจ้งเตือน", Icon: IconBell, badge: "pending" },
       { href: "/mobile-order/kitchen", label: "หน้าจอครัว (KDS)", Icon: IconKitchen },
+      { href: "/mobile-order/menu", label: "จัดการเมนูอาหาร", Icon: IconMenu },
+      { href: "/mobile-order/tables/manage", label: "จัดการโต๊ะ", Icon: IconTable },
       { href: "/mobile-order/qr-codes", label: "จัดการ QR Code", Icon: IconQr },
       { href: "/mobile-order/settings", label: "ตั้งค่าร้าน", Icon: IconStore },
     ],

@@ -35,5 +35,6 @@ export {
   QrCode as IconQr,
   Store as IconStore,
   CreditCard as IconCard,
+  BookOpen as IconMenu,
   Banknote as IconCash,
 } from "lucide-react"

@@ -1429,3 +1429,103 @@ export async function listRoleOptions() {
     select: { id: true, name: true, isSystem: true },
   })
 }
+
+// ───────────────── จัดการโต๊ะและเมนู (master data) ─────────────────
+
+export type ManagedTable = {
+  id: string
+  code: string
+  status: TableCardStatus
+  mergedInto: string | null
+  mergedCount: number
+  sessionCount: number
+  hasActiveQr: boolean
+}
+
+/// โต๊ะทั้งหมดพร้อมข้อมูลที่ใช้ตัดสินว่าแก้/ลบได้ไหม — หน้า /mobile-order/tables/manage
+export async function listTablesForManage(): Promise<ManagedTable[]> {
+  const tables = await prisma.table.findMany({
+    orderBy: { code: "asc" },
+    select: {
+      id: true,
+      code: true,
+      status: true,
+      primaryTable: { select: { code: true } },
+      _count: { select: { mergedTables: true, sessions: true } },
+      qrCodes: { where: { status: "ACTIVE" }, select: { id: true }, take: 1 },
+    },
+  })
+
+  return tables.map((table) => ({
+    id: table.id,
+    code: table.code,
+    status: table.status,
+    mergedInto: table.primaryTable?.code ?? null,
+    mergedCount: table._count.mergedTables,
+    sessionCount: table._count.sessions,
+    hasActiveQr: table.qrCodes.length > 0,
+  }))
+}
+
+export type ManagedMenuItem = {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  isActive: boolean
+  isFeatured: boolean
+  orderedCount: number
+  modifierGroups: {
+    name: string
+    selectionType: "SINGLE" | "MULTIPLE"
+    required: boolean
+    options: { name: string; priceDelta: number }[]
+  }[]
+}
+
+/// เมนูทั้งหมดพร้อมตัวเลือกเสริม — หน้า /mobile-order/menu
+export async function listMenuForManage(): Promise<ManagedMenuItem[]> {
+  const items = await prisma.menuItem.findMany({
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      price: true,
+      imageUrl: true,
+      isActive: true,
+      isFeatured: true,
+      _count: { select: { orderItems: true, saleItems: true } },
+      modifierGroups: {
+        orderBy: { sortOrder: "asc" },
+        select: {
+          name: true,
+          selectionType: true,
+          required: true,
+          options: { orderBy: { sortOrder: "asc" }, select: { name: true, priceDelta: true } },
+        },
+      },
+    },
+  })
+
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    price: toNumber(item.price),
+    imageUrl: item.imageUrl,
+    isActive: item.isActive,
+    isFeatured: item.isFeatured,
+    orderedCount: item._count.orderItems + item._count.saleItems,
+    modifierGroups: item.modifierGroups.map((group) => ({
+      name: group.name,
+      selectionType: group.selectionType,
+      required: group.required,
+      options: group.options.map((option) => ({
+        name: option.name,
+        priceDelta: toNumber(option.priceDelta),
+      })),
+    })),
+  }))
+}

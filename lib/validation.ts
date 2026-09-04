@@ -338,3 +338,57 @@ export const assignRoleSchema = z.object({
     .nullish()
     .transform((v) => (v === "" || v === null ? undefined : v)),
 })
+
+// ───────────────── จัดการโต๊ะและเมนู (master data ของ MJD Mobile Order) ─────────────────
+
+/// รหัสโต๊ะ — ตัวอักษร/ตัวเลข/ขีด เท่านั้น เพราะถูกใช้เป็นข้อความบนทิกเก็ตครัวและใบเสร็จ
+const tableCode = z
+  .string({ error: "กรุณากรอกรหัสโต๊ะ" })
+  .trim()
+  .min(1, "กรุณากรอกรหัสโต๊ะ")
+  .max(12, "รหัสโต๊ะยาวเกินไป (ไม่เกิน 12 ตัวอักษร)")
+  .regex(/^[A-Za-z0-9ก-๙\-]+$/, "รหัสโต๊ะใช้ได้เฉพาะตัวอักษร ตัวเลข และขีด (-)")
+
+export const createTableSchema = z.object({ code: tableCode })
+
+export const renameTableSchema = z.object({
+  id: requiredId("ไม่พบโต๊ะที่ต้องการแก้ไข"),
+  code: tableCode,
+})
+
+/// สร้างโต๊ะเป็นชุด เช่น prefix "T" ตั้งแต่ 1 ถึง 16 → T01…T16
+/// เพดาน 100 ตัวต่อครั้ง — กันพลาดพิมพ์ 1 ถึง 10000 แล้วถล่มฐาน
+export const bulkTableSchema = z
+  .object({
+    prefix: z
+      .string()
+      .trim()
+      .max(6, "คำนำหน้ายาวเกินไป")
+      .regex(/^[A-Za-z0-9ก-๙\-]*$/, "คำนำหน้าใช้ได้เฉพาะตัวอักษร ตัวเลข และขีด (-)"),
+    from: z.coerce.number({ error: "เลขเริ่มต้นต้องเป็นตัวเลข" }).int().min(1, "เลขเริ่มต้นต้องมากกว่า 0").max(9999),
+    to: z.coerce.number({ error: "เลขสิ้นสุดต้องเป็นตัวเลข" }).int().min(1, "เลขสิ้นสุดต้องมากกว่า 0").max(9999),
+  })
+  .refine((v) => v.to >= v.from, { message: "เลขสิ้นสุดต้องไม่น้อยกว่าเลขเริ่มต้น", path: ["to"] })
+  .refine((v) => v.to - v.from + 1 <= 100, { message: "สร้างได้สูงสุด 100 โต๊ะต่อครั้ง", path: ["to"] })
+
+export const menuItemSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1, "กรุณากรอกชื่อเมนู").max(120, "ชื่อเมนูยาวเกินไป"),
+  description: z
+    .string()
+    .trim()
+    .max(300, "คำอธิบายยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+  price: z.coerce
+    .number({ error: "ราคาต้องเป็นตัวเลข" })
+    .min(0, "ราคาต้องไม่ติดลบ")
+    .max(999_999, "ราคาสูงเกินไป"),
+  imageUrl: z
+    .string()
+    .trim()
+    .max(500, "ลิงก์รูปยาวเกินไป")
+    .refine((v) => v === "" || /^(https?:\/\/|\/)/.test(v), "ลิงก์รูปต้องขึ้นต้นด้วย http://, https:// หรือ /")
+    .transform((v) => (v === "" ? null : v)),
+  isActive: z.coerce.boolean(),
+})
