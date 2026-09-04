@@ -72,6 +72,11 @@ COPY --from=deps /app/node_modules ./node_modules
 # ค่ามาจาก config นี้ (process.env.DATABASE_URL) ถ้าไม่ copy มา migrate deploy จะฟ้องหา datasource
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml prisma7.config.ts ./
 COPY prisma ./prisma
+# lib/ + tsconfig.json จำเป็นสำหรับ `pnpm db:create-user` — create-user.ts import ../lib/auth
+# ซึ่งลากต่อไป @/lib/prisma กับ @/lib/mail (alias @/* อ่านจาก tsconfig.json)
+# ไม่ copy มา = สร้างบัญชีแรกบน production ไม่ได้เลย เพราะ disableSignUp ปิดการสมัครเองไว้
+COPY tsconfig.json ./
+COPY lib ./lib
 # seed.ts import "../generated/prisma/client" → ต้อง generate ก่อน ไม่งั้น `prisma db seed` พัง
 RUN pnpm db:generate
 CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
