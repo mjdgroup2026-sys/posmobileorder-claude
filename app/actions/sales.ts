@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
-import { requireUser } from "@/lib/session"
+import { guardAction } from "@/lib/permissions"
 import { toNumber } from "@/lib/format"
 import { businessDateOnly, isSameBusinessDay } from "@/lib/day"
 import {
@@ -14,7 +14,6 @@ import {
 } from "@/lib/validation"
 import type { ActionResult, FieldErrors, ReceiptData, ReceiptLine } from "@/lib/types"
 
-const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
 
 function revalidateSalePages() {
   revalidatePath("/")
@@ -63,12 +62,11 @@ async function nextSaleNumber(tx: RawClient): Promise<string> {
 }
 
 export async function createSale(formData: FormData): Promise<ActionResult<ReceiptData>> {
-  let user
-  try {
-    user = await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ POS:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("POS", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
+  const user = guard.user
 
   const parsed = saleSchema.safeParse({
     items: parseCartJson(formData.get("items")),
@@ -236,12 +234,11 @@ export async function createSale(formData: FormData): Promise<ActionResult<Recei
 }
 
 export async function voidSale(formData: FormData): Promise<ActionResult> {
-  let user
-  try {
-    user = await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ POS_HISTORY:DELETE ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("POS_HISTORY", "DELETE")
+  if (!guard.ok) return { ok: false, error: guard.error }
+  const user = guard.user
 
   const parsed = voidSaleSchema.safeParse({
     id: formData.get("id"),

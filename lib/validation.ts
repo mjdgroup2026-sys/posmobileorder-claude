@@ -315,3 +315,26 @@ export const registerMemberSchema = z.object({
     .transform((v) => v.replace(/[^0-9]/g, ""))
     .refine((v) => /^0\d{9}$/.test(v), "เบอร์โทรต้องเป็นตัวเลข 10 หลักขึ้นต้นด้วย 0"),
 })
+
+// ───────────────────── บทบาทและสิทธิ์ (§4) ─────────────────────
+
+export const roleSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1, "กรุณากรอกชื่อบทบาท").max(60, "ชื่อบทบาทยาวเกินไป"),
+  description: z
+    .string()
+    .trim()
+    .max(200, "คำอธิบายยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+export const assignRoleSchema = z.object({
+  userId: requiredId("ไม่พบผู้ใช้ที่ต้องการแก้ไข"),
+  /// ว่าง = ถอดบทบาทออก (ผู้ใช้จะเข้าได้เฉพาะ /settings ตาม §4)
+  roleId: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})

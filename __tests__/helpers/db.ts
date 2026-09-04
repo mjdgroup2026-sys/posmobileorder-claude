@@ -59,7 +59,9 @@ export async function resetDb(): Promise<void> {
       '"sale_item", "stock_transaction", "cashier_closing", "member_point_transaction", "sale",',
       '"mobile_order_item", "mobile_order", "notification", "line_notification_log", "table_session",',
       '"qr_code", "restaurant_table", "modifier_option", "modifier_group", "menu_item",',
-      '"member", "store_settings", "product", "category"',
+      '"member", "store_settings", "product", "category",',
+      // ตารางสิทธิ์ (§4) — ต้องล้างด้วย ไม่งั้นบทบาทจากเทสก่อนหน้าค้างแล้วชนกับ unique ของชื่อบทบาท
+      '"role_permission", "role"',
       "RESTART IDENTITY CASCADE",
     ].join(" "),
   )
@@ -98,14 +100,58 @@ export async function createTestProduct(input: TestProductInput = {}) {
   })
 }
 
-/// Sale.cashierId เป็น FK ไปตาราง user — ต้องมีผู้ใช้ทดสอบอยู่จริงก่อนสร้างบิล
-export async function ensureTestUser(id = "test-user", name = "ผู้ทดสอบ") {
+/// ทุก resource พร้อม action ที่ resource นั้นรองรับจริง (ตรงกับ RESOURCE_ACTIONS ใน §4)
+const FULL_PERMISSIONS = [
+  { resource: "DASHBOARD", actions: ["VIEW"] },
+  { resource: "PRODUCTS", actions: ["VIEW", "ADD", "EDIT", "DELETE"] },
+  { resource: "CATEGORIES", actions: ["VIEW", "ADD", "EDIT", "DELETE"] },
+  { resource: "STOCK_IN", actions: ["VIEW", "ADD"] },
+  { resource: "STOCK_OUT", actions: ["VIEW", "ADD"] },
+  { resource: "POS", actions: ["VIEW", "ADD"] },
+  { resource: "POS_HISTORY", actions: ["VIEW", "DELETE"] },
+  { resource: "POS_CLOSING", actions: ["VIEW", "ADD"] },
+  { resource: "REPORTS", actions: ["VIEW"] },
+  { resource: "USERS", actions: ["VIEW", "ADD", "EDIT", "DELETE"] },
+] as const
+
+/// บทบาทเต็มสิทธิ์สำหรับเทสที่สนใจ "ตรรกะธุรกิจ" ไม่ใช่ "ระบบสิทธิ์"
+/// เทสที่ทดสอบระบบสิทธิ์เองให้ส่ง `{ withFullPermissions: false }` แล้วผูกบทบาทเอง
+export async function giveFullPermissions(userId: string) {
   const db = testPrisma()
-  return db.user.upsert({
+  const role = await db.role.upsert({
+    where: { name: "เต็มสิทธิ์ (เทส)" },
+    update: {},
+    create: {
+      name: "เต็มสิทธิ์ (เทส)",
+      permissions: {
+        create: FULL_PERMISSIONS.map((row) => ({
+          resource: row.resource as never,
+          actions: [...row.actions] as never,
+        })),
+      },
+    },
+    select: { id: true },
+  })
+  await db.user.update({ where: { id: userId }, data: { roleId: role.id } })
+  return role.id
+}
+
+/// Sale.cashierId เป็น FK ไปตาราง user — ต้องมีผู้ใช้ทดสอบอยู่จริงก่อนสร้างบิล
+export async function ensureTestUser(
+  id = "test-user",
+  name = "ผู้ทดสอบ",
+  options: { withFullPermissions?: boolean } = {},
+) {
+  const db = testPrisma()
+  const user = await db.user.upsert({
     where: { id },
     update: {},
     create: { id, name, email: `${id}@example.com`, emailVerified: true },
   })
+  // ให้สิทธิ์เต็มโดยปริยาย — ก่อนมี §4 ผู้ใช้ทุกคนทำได้ทุกอย่างอยู่แล้ว
+  // เทสเดิมจึงยังวัดสิ่งที่ตั้งใจวัด (ตรรกะธุรกิจ) ไม่ใช่ไปติดด่านสิทธิ์แทน
+  if (options.withFullPermissions ?? true) await giveFullPermissions(id)
+  return user
 }
 
 export async function createTestCategory(name = "หมวดทดสอบ") {

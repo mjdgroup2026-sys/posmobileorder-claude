@@ -2,11 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
-import { requireUser } from "@/lib/session"
+import { guardAction } from "@/lib/permissions"
 import { productSchema, idSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
 import type { ActionResult } from "@/lib/types"
 
-const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
 
 function revalidateProductPages() {
   revalidatePath("/products")
@@ -29,11 +28,10 @@ async function nextSku(): Promise<string> {
 }
 
 export async function createProduct(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ PRODUCTS:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("PRODUCTS", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const parsed = productSchema.safeParse({
     name: formData.get("name"),
@@ -97,11 +95,10 @@ export async function createProduct(formData: FormData): Promise<ActionResult> {
 }
 
 export async function updateProduct(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ PRODUCTS:EDIT ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("PRODUCTS", "EDIT")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const identity = idSchema.safeParse({ id: formData.get("id") })
   if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }
@@ -162,11 +159,10 @@ export async function updateProduct(formData: FormData): Promise<ActionResult> {
 }
 
 export async function deleteProduct(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ PRODUCTS:DELETE ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("PRODUCTS", "DELETE")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const identity = idSchema.safeParse({ id: formData.get("id") })
   if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }

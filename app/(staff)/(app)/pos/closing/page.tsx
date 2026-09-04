@@ -3,10 +3,14 @@ import { getSession } from "@/lib/session"
 import { getTodaySalesSummary, getTodayClosing, listClosings } from "@/lib/queries"
 import { formatBaht, formatDate, formatDateTime, formatNumber } from "@/lib/format"
 import { ClosingForm } from "@/components/closing-form"
+import { requirePageAccess } from "@/lib/permissions"
 
 export const metadata = { title: "ปิดยอดประจำวัน" }
 
 export default async function ClosingPage() {
+  // ด่านชั้นที่ 1 ของ §4 — ต้องมีสิทธิ์ VIEW ก่อนถึงจะ render ได้
+  await requirePageAccess("POS_CLOSING")
+
   const session = await getSession()
   if (!session?.user) redirect("/login")
 

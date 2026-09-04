@@ -4,6 +4,7 @@ import { toNumber } from "@/lib/format"
 import { businessDayRange, businessDateOnly } from "@/lib/day"
 import { computeBillTotals } from "@/lib/close-session"
 import type { PaymentMethodValue } from "@/lib/types"
+import type { PermissionAction as PermissionActionValue, ResourceKey } from "@/generated/prisma/client"
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -239,7 +240,15 @@ export async function getTopMovedProducts(limit = 5) {
 export async function listUsers() {
   const rows = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, email: true, emailVerified: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      emailVerified: true,
+      createdAt: true,
+      roleId: true,
+      role: { select: { name: true, isSystem: true } },
+    },
   })
   return rows
 }
@@ -1374,4 +1383,49 @@ export async function listMenuForSettings(): Promise<FeaturableMenuItem[]> {
 /// (ด่านจริงอยู่ใน `updateStoreSettings` ที่เช็คซ้ำในทรานแซคชันเดียวกับการเขียน)
 export async function getOpenSessionCount(): Promise<number> {
   return prisma.tableSession.count({ where: { status: { in: ["OPEN", "AWAITING_BILL"] } } })
+}
+
+// ───────────────────── บทบาทและสิทธิ์ (§4) ─────────────────────
+
+export type RoleRow = {
+  id: string
+  name: string
+  description: string | null
+  isSystem: boolean
+  userCount: number
+  permissions: Partial<Record<ResourceKey, PermissionActionValue[]>>
+}
+
+export async function listRoles(): Promise<RoleRow[]> {
+  const roles = await prisma.role.findMany({
+    orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      isSystem: true,
+      _count: { select: { users: true } },
+      permissions: { select: { resource: true, actions: true } },
+    },
+  })
+
+  return roles.map((role) => {
+    const permissions: Partial<Record<ResourceKey, PermissionActionValue[]>> = {}
+    for (const row of role.permissions) permissions[row.resource] = row.actions
+    return {
+      id: role.id,
+      name: role.name,
+      description: role.description,
+      isSystem: role.isSystem,
+      userCount: role._count.users,
+      permissions,
+    }
+  })
+}
+
+export async function listRoleOptions() {
+  return prisma.role.findMany({
+    orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, isSystem: true },
+  })
 }

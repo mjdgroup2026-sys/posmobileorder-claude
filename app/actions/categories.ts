@@ -2,11 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
-import { requireUser } from "@/lib/session"
+import { guardAction } from "@/lib/permissions"
 import { categorySchema, idSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
 import type { ActionResult } from "@/lib/types"
 
-const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
 
 function revalidateCategoryPages() {
   revalidatePath("/categories")
@@ -15,11 +14,10 @@ function revalidateCategoryPages() {
 }
 
 export async function createCategory(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ CATEGORIES:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("CATEGORIES", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const parsed = categorySchema.safeParse({ name: formData.get("name") })
   if (!parsed.success) {
@@ -48,11 +46,10 @@ export async function createCategory(formData: FormData): Promise<ActionResult> 
 }
 
 export async function updateCategory(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ CATEGORIES:EDIT ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("CATEGORIES", "EDIT")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const identity = idSchema.safeParse({ id: formData.get("id") })
   if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }
@@ -89,11 +86,10 @@ export async function updateCategory(formData: FormData): Promise<ActionResult> 
 }
 
 export async function deleteCategory(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ CATEGORIES:DELETE ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("CATEGORIES", "DELETE")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const identity = idSchema.safeParse({ id: formData.get("id") })
   if (!identity.success) return { ok: false, error: firstIssueMessage(identity.error) }

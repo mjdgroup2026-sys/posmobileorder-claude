@@ -2,11 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
-import { requireUser } from "@/lib/session"
+import { guardAction } from "@/lib/permissions"
 import { stockMoveSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
 import type { ActionResult } from "@/lib/types"
 
-const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
 
 function revalidateStockPages() {
   revalidatePath("/")
@@ -28,11 +27,10 @@ function parseMove(formData: FormData) {
 }
 
 export async function stockIn(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ STOCK_IN:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("STOCK_IN", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const parsed = parseMove(formData)
   if (!parsed.success) {
@@ -73,11 +71,10 @@ export async function stockIn(formData: FormData): Promise<ActionResult> {
 }
 
 export async function stockOut(formData: FormData): Promise<ActionResult> {
-  try {
-    await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ STOCK_OUT:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("STOCK_OUT", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
 
   const parsed = parseMove(formData)
   if (!parsed.success) {

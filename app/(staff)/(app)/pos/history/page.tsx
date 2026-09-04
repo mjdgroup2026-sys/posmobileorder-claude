@@ -1,10 +1,14 @@
 import { Suspense } from "react"
 import { listSales } from "@/lib/queries"
 import { SaleHistory } from "@/components/sale-history"
+import { requirePageAccess } from "@/lib/permissions"
 
 export const metadata = { title: "ประวัติการขาย" }
 
 export default async function SaleHistoryPage({ searchParams }: PageProps<"/pos/history">) {
+  // ด่านชั้นที่ 1 ของ §4 — ต้องมีสิทธิ์ VIEW ก่อนถึงจะ render ได้
+  await requirePageAccess("POS_HISTORY")
+
   const params = await searchParams
   const from = typeof params.from === "string" ? params.from : ""
   const to = typeof params.to === "string" ? params.to : ""

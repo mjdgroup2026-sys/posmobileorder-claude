@@ -74,15 +74,69 @@ model StockTransaction {
 
 // ───────────────────── Better Auth 1.7.x (โครงจาก @better-auth/core) ─────────────────────
 
+/// สิทธิ์ย่อยที่เลือกได้อิสระเป็นชุดต่อ resource (§4)
+enum PermissionAction {
+  VIEW
+  ADD
+  EDIT
+  DELETE
+}
+
+/// หน้า/โมดูลที่คุมสิทธิ์ได้ — ครอบ F1–F9 ตามตารางใน §4
+/// หน้าของ MJD Mobile Order (F11–F22) ยังไม่อยู่ในชุดนี้ ใช้แค่ requireUser() ตามเดิม
+enum ResourceKey {
+  DASHBOARD
+  PRODUCTS
+  CATEGORIES
+  STOCK_IN
+  STOCK_OUT
+  POS
+  POS_HISTORY
+  POS_CLOSING
+  REPORTS
+  USERS
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  /// บทบาทระบบ — ห้ามแก้ชื่อและห้ามลบ (กันระบบเหลือคนจัดการสิทธิ์ 0 คน)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("role")
+}
+
+model RolePermission {
+  id       String             @id @default(cuid())
+  roleId   String
+  resource ResourceKey
+  /// ชุด action ที่บทบาทนี้ทำได้กับ resource นั้น — ว่าง = ไม่มีสิทธิ์เลย เมนูจะไม่แสดง
+  actions  PermissionAction[]
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource])
+  @@map("role_permission")
+}
+
 model User {
   id            String   @id @default(cuid())
   name          String
   email         String   @unique
   emailVerified Boolean  @default(false)
   image         String?
+  /// null = ยังไม่ถูกกำหนดบทบาท → เข้าได้เฉพาะ /settings (§4 Enforcement)
+  roleId        String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  role                      Role?             @relation(fields: [roleId], references: [id])
   sessions                  Session[]
   accounts                  Account[]
   sales                     Sale[]            @relation("SaleCashier")
@@ -93,6 +147,7 @@ model User {
   storeSettingsUpdates      StoreSettings[]   @relation("StoreSettingsUpdatedBy")
   closings                  CashierClosing[]
 
+  @@index([roleId])
   @@map("user")
 }
 

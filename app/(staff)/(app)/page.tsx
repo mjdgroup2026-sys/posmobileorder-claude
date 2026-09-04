@@ -16,10 +16,14 @@ import {
   IconWallet,
   IconWarning,
 } from "@/components/icons"
+import { requirePageAccess } from "@/lib/permissions"
 
 export const metadata = { title: "ภาพรวม — MJD Mobile Order" }
 
 export default async function DashboardPage() {
+  // ด่านชั้นที่ 1 ของ §4 — ต้องมีสิทธิ์ VIEW ก่อนถึงจะ render ได้
+  await requirePageAccess("DASHBOARD")
+
   const [stats, lowStock, recent, recentSales] = await Promise.all([
     getDashboardStats(),
     getLowStockProducts(6),

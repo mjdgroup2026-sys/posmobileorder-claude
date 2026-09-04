@@ -2,13 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
-import { requireUser } from "@/lib/session"
+import { guardAction } from "@/lib/permissions"
 import { businessDateOnly, businessDayRange } from "@/lib/day"
 import { closingSchema, firstIssueMessage, zodToFieldErrors } from "@/lib/validation"
 import { toNumber } from "@/lib/format"
 import type { ActionResult } from "@/lib/types"
 
-const AUTH_ERROR = "กรุณาเข้าสู่ระบบก่อนทำรายการ"
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -17,12 +16,11 @@ function round2(value: number): number {
 /// ปิดยอดประจำวัน — 1 ครั้ง/แคชเชียร์/วัน (unique cashierId+closingDate เป็นด่านจริง)
 /// ยอดทั้งหมดคำนวณสดจาก Sale ในทรานแซคชันเดียวกัน ไม่รับตัวเลขสรุปจากฝั่ง client
 export async function closeCashierDay(formData: FormData): Promise<ActionResult> {
-  let user
-  try {
-    user = await requireUser()
-  } catch {
-    return { ok: false, error: AUTH_ERROR }
-  }
+  // ด่านชั้นที่ 2 ของ §4 — เช็คสิทธิ์ POS_CLOSING:ADD ก่อนแตะข้อมูลเสมอ
+  // ห้ามพึ่งปุ่มที่ซ่อนไว้ฝั่ง client เพราะ Server Action ถูกเรียกตรงได้
+  const guard = await guardAction("POS_CLOSING", "ADD")
+  if (!guard.ok) return { ok: false, error: guard.error }
+  const user = guard.user
 
   const parsed = closingSchema.safeParse({
     countedCash: formData.get("countedCash"),

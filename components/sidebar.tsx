@@ -19,17 +19,27 @@ import {
   IconKitchen,
   IconQr,
   IconStore,
+  IconLock,
 } from "@/components/icons"
+import type { ResourceKey } from "@/lib/permissions"
 
-type NavItem = { href: string; label: string; Icon: typeof IconDashboard; badge?: "lowStock" | "pending" }
+/// resource = ตัวคุมสิทธิ์ VIEW ของเมนูนั้น (§4) · ไม่ระบุ = เมนูที่ทุกคนที่ล็อกอินเห็นได้
+/// (ตั้งค่าโปรไฟล์ตัวเอง และหน้าของ MJD Mobile Order ที่ยังไม่อยู่ในชุด resource)
+type NavItem = {
+  href: string
+  label: string
+  Icon: typeof IconDashboard
+  badge?: "lowStock" | "pending"
+  resource?: ResourceKey
+}
 
 const GROUPS: { title?: string; items: NavItem[] }[] = [
   {
     items: [
-      { href: "/", label: "ภาพรวม", Icon: IconDashboard },
-      { href: "/pos", label: "ขายหน้าร้าน (POS)", Icon: IconPos },
-      { href: "/pos/history", label: "ประวัติการขาย", Icon: IconReceipt },
-      { href: "/pos/closing", label: "ปิดยอดประจำวัน", Icon: IconCalculator },
+      { href: "/", label: "ภาพรวม", Icon: IconDashboard, resource: "DASHBOARD" },
+      { href: "/pos", label: "ขายหน้าร้าน (POS)", Icon: IconPos, resource: "POS" },
+      { href: "/pos/history", label: "ประวัติการขาย", Icon: IconReceipt, resource: "POS_HISTORY" },
+      { href: "/pos/closing", label: "ปิดยอดประจำวัน", Icon: IconCalculator, resource: "POS_CLOSING" },
     ],
   },
   {
@@ -45,16 +55,17 @@ const GROUPS: { title?: string; items: NavItem[] }[] = [
   {
     title: "คลังสินค้า",
     items: [
-      { href: "/products", label: "สินค้า", Icon: IconProduct, badge: "lowStock" },
-      { href: "/categories", label: "หมวดหมู่สินค้า", Icon: IconCategory },
-      { href: "/stock-in", label: "รับสินค้าเข้า", Icon: IconStockIn },
-      { href: "/stock-out", label: "เบิกจ่ายสินค้า", Icon: IconStockOut },
-      { href: "/reports", label: "รายงาน", Icon: IconReports },
+      { href: "/products", label: "สินค้า", Icon: IconProduct, badge: "lowStock", resource: "PRODUCTS" },
+      { href: "/categories", label: "หมวดหมู่สินค้า", Icon: IconCategory, resource: "CATEGORIES" },
+      { href: "/stock-in", label: "รับสินค้าเข้า", Icon: IconStockIn, resource: "STOCK_IN" },
+      { href: "/stock-out", label: "เบิกจ่ายสินค้า", Icon: IconStockOut, resource: "STOCK_OUT" },
+      { href: "/reports", label: "รายงาน", Icon: IconReports, resource: "REPORTS" },
     ],
   },
   {
     items: [
-      { href: "/users", label: "ผู้ใช้งาน", Icon: IconUsers },
+      { href: "/users", label: "ผู้ใช้งาน", Icon: IconUsers, resource: "USERS" },
+      { href: "/roles", label: "บทบาทและสิทธิ์", Icon: IconLock, resource: "USERS" },
       { href: "/settings", label: "ตั้งค่า", Icon: IconSettings },
     ],
   },
@@ -67,11 +78,23 @@ const EXACT_MATCH = new Set(["/", "/pos"])
 export function Sidebar({
   lowStockCount,
   pendingNotificationCount = 0,
+  viewableResources,
 }: {
   lowStockCount: number
   pendingNotificationCount?: number
+  /// resource ที่ผู้ใช้มีสิทธิ์ VIEW — layout คำนวณจาก DB ให้ทุกคำขอ
+  viewableResources: ResourceKey[]
 }) {
   const pathname = usePathname()
+
+  // เมนูที่ไม่ผูก resource แสดงเสมอ · ที่ผูกไว้ต้องมีสิทธิ์ VIEW ถึงจะเห็น (§4)
+  // ซ่อนเมนูเป็นแค่ความสะดวก ด่านจริงคือ requirePageAccess() ที่ตัวหน้า
+  const canView = (item: NavItem) => !item.resource || viewableResources.includes(item.resource)
+
+  // กลุ่มที่ไม่เหลือเมนูเลยต้องหายไปทั้งกลุ่ม ไม่ใช่เหลือหัวข้อลอย ๆ
+  const visibleGroups = GROUPS.map((group) => ({ group, items: group.items.filter(canView) })).filter(
+    ({ items }) => items.length > 0,
+  )
 
   function badgeCount(item: NavItem): number {
     if (item.badge === "lowStock") return lowStockCount
@@ -105,7 +128,7 @@ export function Sidebar({
       </Link>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {GROUPS.map((group, index) => (
+        {visibleGroups.map(({ group, items }, index) => (
           <div key={group.title ?? `group-${index}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {group.title ? (
               <span className="t-eyebrow" style={{ padding: "4px 12px" }}>
@@ -113,7 +136,7 @@ export function Sidebar({
               </span>
             ) : null}
 
-            {group.items.map(({ href, label, Icon, badge }) => {
+            {items.map(({ href, label, Icon, badge }) => {
               const active = EXACT_MATCH.has(href) ? pathname === href : pathname.startsWith(href)
               const count = badgeCount({ href, label, Icon, badge })
               return (

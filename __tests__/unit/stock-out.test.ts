@@ -7,14 +7,13 @@ import { makeFormData } from "../helpers/form"
 
 const prismaMock = mockDeep<PrismaClient>()
 
-const requireUserMock = vi.fn()
+/// ด่านสิทธิ์ (§4) — unit test นี้ mock Prisma ทั้งก้อน จึงอ่านบทบาทจากฐานจริงไม่ได้
+/// mock ที่ตัว guardAction แทน แล้วสลับผลลัพธ์เอาเองในแต่ละเคส
+const guardActionMock = vi.fn()
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
-vi.mock("@/lib/session", () => ({
-  requireUser: requireUserMock,
-  getSession: vi.fn(async () => ({ user: { id: "test-user" } })),
-}))
+vi.mock("@/lib/permissions", () => ({ guardAction: guardActionMock }))
 
 /// ช่วงอักขระไทยใน Unicode — ใช้ยืนยันว่าข้อความที่ผู้ใช้เห็นเป็นภาษาไทยจริง (กติกาข้อ 6)
 const THAI = /[฀-๿]/
@@ -34,8 +33,11 @@ function wireInteractiveTransaction() {
 
 beforeEach(async () => {
   mockReset(prismaMock)
-  requireUserMock.mockReset()
-  requireUserMock.mockResolvedValue({ id: "test-user", name: "ผู้ทดสอบ", email: "test@example.com" })
+  guardActionMock.mockReset()
+  guardActionMock.mockResolvedValue({
+    ok: true,
+    user: { id: "test-user", name: "ผู้ทดสอบ", email: "test@example.com", roleId: "role_test", roleName: "เต็มสิทธิ์", granted: {} },
+  })
   wireInteractiveTransaction()
 
   const actions = await import("@/app/actions/stock")
@@ -45,7 +47,7 @@ beforeEach(async () => {
 describe("stockOut — ด่านสิทธิ์และการตรวจข้อมูลนำเข้า", () => {
   it("ไม่ได้เข้าสู่ระบบต้องล้มเหลวและห้ามแตะฐานข้อมูลเลย", async () => {
     // arrange
-    requireUserMock.mockRejectedValue(new Error("UNAUTHENTICATED"))
+    guardActionMock.mockResolvedValue({ ok: false, error: "กรุณาเข้าสู่ระบบก่อนทำรายการ" })
 
     // act
     const result = await stockOut(makeFormData({ productId: PRODUCT_ID, quantity: 2, note: "" }))

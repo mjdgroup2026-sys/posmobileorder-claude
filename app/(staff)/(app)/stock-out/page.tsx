@@ -2,10 +2,14 @@ import { listProductOptions, listTransactions } from "@/lib/queries"
 import { stockOut } from "@/app/actions/stock"
 import { StockMoveForm } from "@/components/stock-move-form"
 import { formatDateTime, formatNumber } from "@/lib/format"
+import { requirePageAccess } from "@/lib/permissions"
 
 export const metadata = { title: "เบิกจ่ายสินค้า" }
 
 export default async function StockOutPage() {
+  // ด่านชั้นที่ 1 ของ §4 — ต้องมีสิทธิ์ VIEW ก่อนถึงจะ render ได้
+  await requirePageAccess("STOCK_OUT")
+
   const [products, transactions] = await Promise.all([listProductOptions(), listTransactions(50)])
   const history = transactions.filter((t) => t.type === "OUT").slice(0, 12)
 

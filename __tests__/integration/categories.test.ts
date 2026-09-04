@@ -5,6 +5,7 @@ import {
   createTestProduct,
   disconnectTestDb,
   isTestDbReachable,
+  ensureTestUser,
   resetDb,
   testPrisma,
 } from "../helpers/db"
@@ -32,6 +33,8 @@ describe.skipIf(!dbReady)("หมวดหมู่สินค้า (F8) — �
 
   beforeEach(async () => {
     await resetDb()
+    // ด่านสิทธิ์ (§4) อ่านบทบาทจากแถวผู้ใช้จริง — session ที่ mock ไว้อย่างเดียวไม่พออีกต่อไป
+    await ensureTestUser()
   })
 
   afterAll(async () => {
