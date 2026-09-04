@@ -231,3 +231,36 @@ export const generateQrSchema = z.object({
 })
 
 export type CartLineInput = z.infer<typeof cartLineSchema>
+
+// ───────────────────── ชำระเงิน (Phase 10) ─────────────────────
+
+export const confirmPaymentSchema = z.object({
+  sessionId: requiredId("ไม่พบโต๊ะที่ต้องการปิดบิล"),
+  paymentMethod: z.enum(["PROMPTPAY", "CARD", "CASH", "TRANSFER"], {
+    error: "กรุณาเลือกวิธีชำระเงิน",
+  }),
+  amountReceived: z.coerce
+    .number({ error: "จำนวนเงินที่รับต้องเป็นตัวเลข" })
+    .min(0, "จำนวนเงินที่รับต้องไม่ติดลบ")
+    .max(9_999_999, "จำนวนเงินสูงเกินไป")
+    .optional(),
+  reference: z
+    .string({ error: "เลขอ้างอิงไม่ถูกต้อง" })
+    .trim()
+    .max(120, "เลขอ้างอิงยาวเกินไป")
+    .nullish()
+    .transform((v) => (v === "" || v === null ? undefined : v)),
+})
+
+/// payload ที่ webhook ของผู้ให้บริการต้องส่งมา — ตั้งใจให้เล็กและเป็นกลาง ไม่ผูกกับเจ้าใดเจ้าหนึ่ง
+export const paymentWebhookSchema = z.object({
+  reference: z.string({ error: "ต้องมี reference" }).trim().min(1, "ต้องมี reference").max(120),
+  sessionId: z.string().trim().min(1).optional(),
+  qrToken: z.string().trim().min(1).optional(),
+  amount: z.coerce.number({ error: "amount ต้องเป็นตัวเลข" }).min(0).max(9_999_999).optional(),
+})
+
+export const startPaymentSchema = z.object({
+  qrToken: requiredId("ไม่พบ QR Code ของโต๊ะนี้"),
+  method: z.enum(["PROMPTPAY", "CARD"], { error: "กรุณาเลือกวิธีชำระเงิน" }),
+})

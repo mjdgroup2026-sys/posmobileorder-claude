@@ -190,7 +190,17 @@ export function SaleHistory({ sales, from, to, status, search }: Props) {
                     <td className="num" style={{ padding: "12px", textAlign: "right" }}>
                       {formatNumber(sale.items.length)}
                     </td>
-                    <td style={{ padding: "12px" }}>{PAYMENT_METHOD_LABEL[sale.paymentMethod]}</td>
+                    <td style={{ padding: "12px" }}>
+                      {PAYMENT_METHOD_LABEL[sale.paymentMethod]}
+                      {sale.channel === "MOBILE_ORDER" ? (
+                        <>
+                          <br />
+                          <span className="t-caption">
+                            Mobile Order{sale.tableCode ? ` · โต๊ะ ${sale.tableCode}` : ""}
+                          </span>
+                        </>
+                      ) : null}
+                    </td>
                     <td className="num" style={{ padding: "12px", textAlign: "right", fontWeight: 600 }}>
                       ฿{formatBaht(sale.total)}
                     </td>
@@ -286,7 +296,12 @@ export function SaleHistory({ sales, from, to, status, search }: Props) {
                 </span>
                 <span className="row" style={{ justifyContent: "space-between" }}>
                   <span>ชำระโดย</span>
-                  <span>{PAYMENT_METHOD_LABEL[detail.paymentMethod]}</span>
+                  <span>
+                    {PAYMENT_METHOD_LABEL[detail.paymentMethod]}
+                    {detail.channel === "MOBILE_ORDER"
+                      ? ` · Mobile Order${detail.tableCode ? ` โต๊ะ ${detail.tableCode}` : ""}`
+                      : ""}
+                  </span>
                 </span>
                 {detail.paymentMethod === "CASH" ? (
                   <span className="row" style={{ justifyContent: "space-between" }}>

@@ -21,6 +21,10 @@ enum PaymentMethod {
   CASH
   TRANSFER
   QR
+  /// ใหม่ใน Phase 10 — MJD Mobile Order เท่านั้น ยืนยันผ่าน webhook ของผู้ให้บริการ
+  PROMPTPAY
+  /// ใหม่ใน Phase 10 — EDC ที่เคาน์เตอร์ พนักงานกดยืนยันด้วยมือ (ไม่ใช่ payment gateway ในแอป)
+  CARD
 }
 
 enum SaleStatus {
@@ -157,23 +161,25 @@ model Category {
 }
 
 model Sale {
-  id             String        @id @default(cuid())
-  saleNumber     String        @unique
-  status         SaleStatus    @default(COMPLETED)
-  subtotal       Decimal       @db.Decimal(12, 2)
-  discount       Decimal       @default(0) @db.Decimal(12, 2)
-  total          Decimal       @db.Decimal(12, 2)
-  paymentMethod  PaymentMethod
-  amountReceived Decimal       @db.Decimal(12, 2)
-  changeDue      Decimal       @default(0) @db.Decimal(12, 2)
-  note           String?
-  channel        SaleChannel   @default(RETAIL_POS)
-  tableSessionId String?       @unique
-  cashierId      String
-  voidedAt       DateTime?
-  voidedById     String?
-  voidReason     String?
-  createdAt      DateTime      @default(now())
+  id               String        @id @default(cuid())
+  saleNumber       String        @unique
+  status           SaleStatus    @default(COMPLETED)
+  subtotal         Decimal       @db.Decimal(12, 2)
+  discount         Decimal       @default(0) @db.Decimal(12, 2)
+  total            Decimal       @db.Decimal(12, 2)
+  paymentMethod    PaymentMethod
+  amountReceived   Decimal       @db.Decimal(12, 2)
+  changeDue        Decimal       @default(0) @db.Decimal(12, 2)
+  note             String?
+  channel          SaleChannel   @default(RETAIL_POS)
+  /// อ้างอิงการชำระเงินจากผู้ให้บริการ — unique เพื่อกัน webhook ที่ยิงซ้ำสร้างบิลซ้ำ (Phase 10)
+  paymentReference String?       @unique
+  tableSessionId   String?       @unique
+  cashierId        String
+  voidedAt         DateTime?
+  voidedById       String?
+  voidReason       String?
+  createdAt        DateTime      @default(now())
 
   cashier      User                    @relation("SaleCashier", fields: [cashierId], references: [id])
   session      TableSession?           @relation(fields: [tableSessionId], references: [id])
@@ -190,18 +196,27 @@ model Sale {
 }
 
 model SaleItem {
-  id        String  @id @default(cuid())
-  saleId    String
-  productId String
-  quantity  Int
-  unitPrice Decimal @db.Decimal(12, 2)
-  subtotal  Decimal @db.Decimal(12, 2)
+  id         String  @id @default(cuid())
+  saleId     String
+  /// บิลขายหน้าร้านอ้าง Product — บิลจาก MJD Mobile Order เป็น null (อ้าง menuItemId แทน)
+  productId  String?
+  /// บิลจาก MJD Mobile Order อ้าง MenuItem — บิลขายหน้าร้านเป็น null
+  menuItemId String?
+  /// ชื่อรายการ ณ เวลาขาย (snapshot) — หน้าประวัติ/ใบเสร็จอ่านจากฟิลด์นี้ ไม่ต้อง join กลับ
+  name       String
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(12, 2)
+  subtotal   Decimal @db.Decimal(12, 2)
 
-  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  sale     Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  // คง RESTRICT ไว้เหมือนก่อนทำให้ productId เป็น optional — ห้ามลบสินค้าที่เคยขายไปแล้ว
+  // (ค่า default ของ Prisma สำหรับ relation แบบ optional คือ SetNull ซึ่งจะล้างประวัติการขายทิ้ง)
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id])
 
   @@index([saleId])
   @@index([productId])
+  @@index([menuItemId])
   @@map("sale_item")
 }
 
@@ -214,6 +229,8 @@ model CashierClosing {
   totalCash     Decimal  @db.Decimal(12, 2)
   totalTransfer Decimal  @db.Decimal(12, 2)
   totalQR       Decimal  @db.Decimal(12, 2)
+  /// รวมพร้อมเพย์/บัตร ที่ปิดบิลด้วยแคชเชียร์คนนี้ (Phase 10) — แยกจาก QR ไม่ให้ปนกับยอดสแกน QR หน้าร้าน
+  totalCard     Decimal  @default(0) @db.Decimal(12, 2)
   billCount     Int      @default(0)
   voidedCount   Int      @default(0)
   countedCash   Decimal  @db.Decimal(12, 2)
@@ -352,6 +369,7 @@ model MenuItem {
 
   modifierGroups ModifierGroup[]
   orderItems     MobileOrderItem[]
+  saleItems      SaleItem[]
 
   @@index([isActive])
   @@index([isFeatured])

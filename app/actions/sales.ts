@@ -183,6 +183,7 @@ export async function createSale(formData: FormData): Promise<ActionResult<Recei
             data: {
               saleId: sale.id,
               productId: item.productId,
+              name: item.name,
               quantity: item.quantity,
               unitPrice: item.unitPrice.toFixed(2),
               subtotal: item.subtotal.toFixed(2),
@@ -305,6 +306,9 @@ export async function voidSale(formData: FormData): Promise<ActionResult> {
 
       // คืนสต็อกด้วยรายการชดเชย — ห้ามลบ/แก้ StockTransaction(OUT) เดิม (ledger append-only)
       for (const item of sale.items) {
+        // บรรทัดที่มาจาก MJD Mobile Order อ้าง MenuItem ไม่ใช่ Product จึงไม่มีสต็อกให้คืน (Phase 10)
+        if (!item.productId) continue
+
         await tx.product.update({
           where: { id: item.productId },
           data: { quantity: { increment: item.quantity } },

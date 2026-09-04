@@ -6,12 +6,17 @@ export type ActionResult<T = undefined> =
   | { ok: true; message: string; data?: T }
   | { ok: false; error: string; fieldErrors?: FieldErrors }
 
-export type PaymentMethodValue = "CASH" | "TRANSFER" | "QR"
+export type PaymentMethodValue = "CASH" | "TRANSFER" | "QR" | "PROMPTPAY" | "CARD"
+
+/// วิธีชำระเงินที่เลือกได้บนหน้าขายหน้าร้าน — PROMPTPAY/CARD เป็นของช่องทาง MJD Mobile Order เท่านั้น
+export const RETAIL_PAYMENT_METHODS = ["CASH", "TRANSFER", "QR"] as const
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethodValue, string> = {
   CASH: "เงินสด",
   TRANSFER: "โอนเงิน",
   QR: "สแกน QR",
+  PROMPTPAY: "พร้อมเพย์",
+  CARD: "บัตรเครดิต/เดบิต",
 }
 
 export type ReceiptLine = {

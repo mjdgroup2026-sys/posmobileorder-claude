@@ -51,6 +51,11 @@ export default async function ClosingPage() {
           <strong className="t-h1 num">฿{formatBaht(summary.totalQR)}</strong>
         </article>
         <article className="stat-tile">
+          <span className="t-caption">พร้อมเพย์/บัตร</span>
+          <strong className="t-h1 num">฿{formatBaht(summary.totalCard)}</strong>
+          <span className="t-caption">บิลจาก MJD Mobile Order</span>
+        </article>
+        <article className="stat-tile">
           <span className="t-caption">บิลที่ถูกยกเลิกวันนี้</span>
           <strong className="t-h1 num" style={{ color: summary.voidedCount > 0 ? "var(--danger)" : undefined }}>
             {formatNumber(summary.voidedCount)}
@@ -76,6 +81,10 @@ export default async function ClosingPage() {
               <span className="row" style={{ justifyContent: "space-between" }}>
                 <span className="t-small">ยอดเงินสดตามระบบ</span>
                 <span className="num">฿{formatBaht(today.totalCash)}</span>
+              </span>
+              <span className="row" style={{ justifyContent: "space-between" }}>
+                <span className="t-small">พร้อมเพย์/บัตร</span>
+                <span className="num">฿{formatBaht(today.totalCard)}</span>
               </span>
               <span className="row" style={{ justifyContent: "space-between" }}>
                 <span className="t-small">เงินสดที่นับได้</span>

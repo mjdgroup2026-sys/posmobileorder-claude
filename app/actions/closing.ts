@@ -55,12 +55,15 @@ export async function closeCashierDay(formData: FormData): Promise<ActionResult>
       let totalCash = 0
       let totalTransfer = 0
       let totalQR = 0
+      let totalCard = 0
       for (const sale of completed) {
         const value = toNumber(sale.total)
         totalSales += value
         if (sale.paymentMethod === "CASH") totalCash += value
         else if (sale.paymentMethod === "TRANSFER") totalTransfer += value
-        else totalQR += value
+        else if (sale.paymentMethod === "QR") totalQR += value
+        // พร้อมเพย์/บัตรจาก MJD Mobile Order — ไม่กระทบเงินสดในลิ้นชัก จึงแยกถังของตัวเอง (Phase 10)
+        else totalCard += value
       }
 
       const gap = round2(countedCash - round2(totalCash))
@@ -73,6 +76,7 @@ export async function closeCashierDay(formData: FormData): Promise<ActionResult>
           totalCash: round2(totalCash).toFixed(2),
           totalTransfer: round2(totalTransfer).toFixed(2),
           totalQR: round2(totalQR).toFixed(2),
+          totalCard: round2(totalCard).toFixed(2),
           billCount: completed.length,
           voidedCount,
           countedCash: round2(countedCash).toFixed(2),

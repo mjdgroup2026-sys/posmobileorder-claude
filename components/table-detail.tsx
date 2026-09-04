@@ -11,7 +11,7 @@ import { formatBaht, formatClock, formatDateTime, formatNumber } from "@/lib/for
 import type { OrderItemRow, TableDetail as TableDetailData } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
-import { IconBack, IconSpinner } from "@/components/icons"
+import { IconBack, IconReceipt, IconSpinner } from "@/components/icons"
 import {
   Dialog,
   DialogContent,
@@ -126,6 +126,10 @@ export function TableDetail({ detail }: { detail: TableDetailData }) {
             <span className="dot" />
             ยอดรวม ฿<span className="num">{formatBaht(detail.total)}</span>
           </span>
+          <Link href={`/mobile-order/tables/${detail.tableId}/billing`} className="btn btn-primary">
+            <IconReceipt size={17} aria-hidden />
+            ปิดบิล / รับชำระเงิน
+          </Link>
           <button
             type="button"
             className="btn btn-danger"

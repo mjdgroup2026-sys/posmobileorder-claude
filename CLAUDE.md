@@ -5,11 +5,11 @@
 ระบบคลังสินค้าเบิกจ่าย + ขายหน้าร้าน (Inventory + POS) ที่มี **2 ช่องทางขาย (channel) คู่ขนานกัน**:
 POS หน้าร้าน (retail, `Sale.channel = RETAIL_POS`) กับ **MJD Mobile Order** (สั่งอาหารผ่าน QR Code สำหรับ
 ร้านอาหารแบบ table service, `Sale.channel = MOBILE_ORDER`) ทั้งสองช่องทางปิดบิลเข้า `Sale`/`SaleItem` ชุดเดียวกัน
-ไม่ใช่ระบบแยก — ดูหัวข้อ [MJD Mobile Order](#-mjd-mobile-order-phase-612--ยังไม่เริ่ม) ท้ายไฟล์นี้
+ไม่ใช่ระบบแยก — ดูหัวข้อ [MJD Mobile Order](#-mjd-mobile-order-phase-612) ท้ายไฟล์นี้
 
-> ✅ **Phase 1–2, 2.5 และ 6–9 เสร็จแล้ว** — คลังสินค้า, POS หน้าร้าน และ MJD Mobile Order ตั้งแต่ผังโต๊ะ
-> KDS ไปจนถึงลูกค้าสแกน QR สั่งอาหารเองได้ครบ · เหลือ Phase 10–12 (ชำระเงิน/LINE/CRM) และงานค้างใน
-> Phase 5 (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
+> ✅ **Phase 1–2, 2.5 และ 6–10 เสร็จแล้ว** — คลังสินค้า, POS หน้าร้าน และ MJD Mobile Order ตั้งแต่ผังโต๊ะ
+> KDS ลูกค้าสแกน QR สั่งอาหารเอง ไปจนถึงชำระเงิน (พร้อมเพย์/บัตร) แล้วปิดบิลอัตโนมัติได้ครบ ·
+> เหลือ Phase 11–12 (LINE/CRM) และงานค้างใน Phase 5 (ดู [สถานะการพัฒนา](#สถานะการพัฒนา))
 >
 > **dev server รันที่ port 3001** (`pnpm dev`) เพราะ container `pos-app` ของโปรเจกต์ POS_Shop เดิม
 > ยึด 3000 อยู่ · `BETTER_AUTH_URL` ใน `.env` ต้องตรงกับ origin ที่ใช้จริงเสมอ ไม่งั้น Better Auth
@@ -264,16 +264,22 @@ checkbox ใน `Docs/spec.md` ติ๊กครบทั้งสาม Phase
   แจ้งเตือนใกล้หมด + badge, รายงาน 30 วัน, ผู้ใช้งาน, ตั้งค่าโปรไฟล์
 - **MJD Mobile Order**: ผังโต๊ะ `/mobile-order/tables` (เปิด/รวม/ยกเลิกโต๊ะ + เวลาเปิดโต๊ะคำนวณสด),
   `/mobile-order/notifications`, `/mobile-order/kitchen` (KDS 3 คอลัมน์), `/mobile-order/qr-codes`,
-  `/mobile-order/tables/[tableId]` (ยกเลิกรายการได้เฉพาะที่ครัวยังไม่เริ่มทำ) และฝั่งลูกค้า `/order/[qrToken]/*`
-  (เมนู → ปรับแต่ง → ตะกร้า → ยืนยัน → ติดตามสถานะ → เรียกพนักงาน/เช็กบิล)
+  `/mobile-order/tables/[tableId]` (ยกเลิกรายการได้เฉพาะที่ครัวยังไม่เริ่มทำ),
+  `/mobile-order/tables/[tableId]/billing` (ปิดบิล + ค่าบริการ + ใบเสร็จพิมพ์ได้) และฝั่งลูกค้า
+  `/order/[qrToken]/*` (เมนู → ปรับแต่ง → ตะกร้า → ยืนยัน → ติดตามสถานะ → เรียกพนักงาน/เช็กบิล →
+  ชำระเงินพร้อมเพย์/บัตร → ปิดบิลอัตโนมัติ)
+- **ชำระเงิน MJD Mobile Order**: `POST /api/payments/webhook` (idempotent ด้วย `Sale.paymentReference`
+  ที่ unique) + `lib/close-session.ts` ที่ทั้ง webhook และพนักงานกดยืนยันใช้ร่วมกัน · payload พร้อมเพย์
+  สร้างเองที่ `lib/promptpay.ts` (env `PROMPTPAY_ID`) · เปิดเส้นทางอัตโนมัติด้วย `PAYMENT_WEBHOOK_SECRET`
+  (ไม่ตั้ง = endpoint ตอบ 503 แต่ปิดบิลด้วยมือได้ตามปกติ) · **ยังไม่ได้ต่อ provider จริง**
 - **POS หน้าร้าน**: หน้า `/pos` (ค้นหา/บาร์โค้ด + ตะกร้า + ส่วนลด + ชำระเงิน CASH/TRANSFER/QR + ใบเสร็จพิมพ์ได้),
   `/pos/history` (กรองวันที่/สถานะ + void พร้อมเหตุผล), `/pos/closing` (ปิดยอดวันละครั้ง/คน + ส่วนต่างเงินสด),
   `/categories` (หมวดหมู่เป็น master data — `Product.categoryId` เป็น FK แล้ว ไม่ใช่ข้อความอิสระ)
 - ฐานข้อมูล: `posmobileorderdb` บน container `posmobileorder-postgres` (PostgreSQL 18, port **5437**)
   seed ไว้ 7 รายการ SKU-1001…SKU-1007 + บิลตัวอย่าง 8 บิล
 
-**ยังไม่ได้ทำ**: Phase 10 (ชำระเงิน PromptPay/Card + ปิดบิลอัตโนมัติ) · Phase 11 (LINE) · Phase 12 (แบรนด์ + CRM) ·
-Phase 3–5 ทำไปบางส่วน (ดูด้านล่าง) — ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
+**ยังไม่ได้ทำ**: Phase 11 (LINE) · Phase 12 (แบรนด์ + CRM) · Phase 3–5 ทำไปบางส่วน (ดูด้านล่าง) —
+ลำดับงานทั้งหมดอยู่ที่ [`Docs/spec.md` §8](Docs/spec.md)
 
 **✅ deploy ขึ้น production แล้ว (2026-09-02): https://posqr.jayjayservices.com**
 CI/CD อัตโนมัติจาก `main` ทำงานจริง — push → test → build+push image ไป `ghcr.io` → scp compose +
@@ -295,14 +301,14 @@ CI/CD อัตโนมัติจาก `main` ทำงานจริง �
 - หน้า `/users` แสดงคอลัมน์บทบาทเป็น "ยังไม่กำหนดสิทธิ์" ทุกแถว เพราะไม่มีตาราง `Role` (และจะไม่มีใน v1)
 - `requireUser()` เช็คแค่ว่าล็อกอินอยู่ — v1 ตั้งใจให้เป็นแบบนี้ ไม่ต้องต่อยอดเป็น `requirePermission()`
 
-## 🍽️ MJD Mobile Order (Phase 6–12 — ยังไม่เริ่ม)
+## 🍽️ MJD Mobile Order (Phase 6–12)
 
-Channel ที่สอง (สั่งอาหารผ่าน QR Code สำหรับร้านอาหารแบบ table service) ถูกออกแบบไว้**ครบแล้วใน spec**
-แต่ยังไม่ได้ลงมือทำ และ**ต้องทำหลัง Phase 1–5 (ฐาน + POS หน้าร้าน) เสร็จก่อน** เพราะทุกบิลของ Mobile Order
-ปิดลงตาราง `Sale`/`SaleItem` ที่สร้างใน Phase 2.5 — เอนทิตี `Table`, `TableSession`, `MenuItem`,
+Channel ที่สอง (สั่งอาหารผ่าน QR Code สำหรับร้านอาหารแบบ table service) — **Phase 6–10 ทำเสร็จแล้ว
+เหลือ Phase 11 (LINE) กับ Phase 12 (แบรนด์ + CRM)** ทุกบิลของ Mobile Order ปิดลงตาราง
+`Sale`/`SaleItem` ที่สร้างใน Phase 2.5 — เอนทิตี `Table`, `TableSession`, `MenuItem`,
 `ModifierGroup`/`ModifierOption`, `MobileOrder`/`MobileOrderItem`, `QRCode`, `Notification`,
 `LineNotificationLog`, `StoreSettings`, `Member`/`MemberPointTransaction` และ route `/mobile-order/*`,
-`/order/[qrToken]/*` ทั้งหมดเริ่มสร้างที่ Phase 6 (วางฐาน schema/table-session) ตามลำดับใน spec
+`/order/[qrToken]/*` สร้างไล่มาตั้งแต่ Phase 6 (วางฐาน schema/table-session) ตามลำดับใน spec
 
 ที่ที่ต้องดูก่อนเริ่มงานส่วนนี้:
 - [`Docs/spec.md` §2 Data Model](Docs/spec.md) — หัวข้อ "MJD Mobile Order — Data Model" (เอนทิตี + enum ใหม่

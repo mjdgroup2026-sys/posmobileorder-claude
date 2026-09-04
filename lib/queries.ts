@@ -2,7 +2,12 @@ import "server-only"
 import { prisma } from "@/lib/prisma"
 import { toNumber } from "@/lib/format"
 import { businessDayRange, businessDateOnly } from "@/lib/day"
+import { computeBillTotals } from "@/lib/close-session"
 import type { PaymentMethodValue } from "@/lib/types"
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
 
 export type ProductListItem = {
   id: string
@@ -254,6 +259,10 @@ export type SaleListItem = {
   note: string | null
   createdAt: Date
   cashierName: string
+  /// ช่องทางที่ออกบิล — บิลจาก MJD Mobile Order ปนอยู่ในตารางเดียวกับบิลหน้าร้าน (กติกาข้อ 8)
+  channel: "RETAIL_POS" | "MOBILE_ORDER"
+  /// รหัสโต๊ะของบิล Mobile Order — บิลหน้าร้านเป็น null
+  tableCode: string | null
   voidedAt: Date | null
   voidReason: string | null
   voidedByName: string | null
@@ -290,7 +299,8 @@ export async function listSales(
     include: {
       cashier: { select: { name: true } },
       voidedBy: { select: { name: true } },
-      items: { include: { product: { select: { name: true, sku: true, unit: true } } } },
+      session: { select: { table: { select: { code: true } } } },
+      items: { include: { product: { select: { sku: true, unit: true } } } },
     },
   })
 
@@ -315,6 +325,8 @@ export async function listSales(
     note: sale.note,
     createdAt: sale.createdAt,
     cashierName: sale.cashier.name,
+    channel: sale.channel,
+    tableCode: sale.session?.table.code ?? null,
     voidedAt: sale.voidedAt,
     voidReason: sale.voidReason,
     voidedByName: sale.voidedBy?.name ?? null,
@@ -325,9 +337,10 @@ export async function listSales(
       !closedCashiers.has(sale.cashierId),
     items: sale.items.map((item) => ({
       id: item.id,
-      name: item.product.name,
-      sku: item.product.sku,
-      unit: item.product.unit,
+      // ชื่อเป็น snapshot ในแถวเอง — บิลจาก Mobile Order ไม่มี product ให้ join (Phase 10)
+      name: item.name,
+      sku: item.product?.sku ?? "",
+      unit: item.product?.unit ?? "",
       quantity: item.quantity,
       unitPrice: toNumber(item.unitPrice),
       subtotal: toNumber(item.subtotal),
@@ -378,16 +391,19 @@ export async function getSalesReport() {
   }))
 }
 
+/// รายการขายดี 30 วัน — นับทั้งสินค้าหน้าร้านและเมนูของ MJD Mobile Order ในลิสต์เดียวกัน
+/// (ยอดขายทั้งสองช่องทางลง Sale ชุดเดียวกันตามกติกาข้อ 8 รายงานจึงต้องเห็นครบทั้งคู่)
 export async function getTopSellingProducts(limit = 5) {
   const rows = await prisma.$queryRaw<{ name: string; sku: string; qty: bigint; revenue: string }[]>`
-    SELECT p."name", p."sku",
+    SELECT i."name" AS name,
+           COALESCE(MAX(p."sku"), '') AS sku,
            SUM(i."quantity")::bigint AS qty,
            COALESCE(SUM(i."subtotal"), 0)::text AS revenue
     FROM "sale_item" i
     JOIN "sale" s ON s."id" = i."saleId"
-    JOIN "product" p ON p."id" = i."productId"
+    LEFT JOIN "product" p ON p."id" = i."productId"
     WHERE s."status" = 'COMPLETED' AND s."createdAt" >= now() - interval '30 days'
-    GROUP BY p."name", p."sku"
+    GROUP BY i."name"
     ORDER BY qty DESC
     LIMIT ${limit}
   `
@@ -418,6 +434,8 @@ export type ClosingSummary = {
   totalCash: number
   totalTransfer: number
   totalQR: number
+  /// พร้อมเพย์/บัตร จากช่องทาง MJD Mobile Order (Phase 10) — แยกถังไว้ ไม่ปนกับ QR หน้าร้าน
+  totalCard: number
   billCount: number
   voidedCount: number
 }
@@ -441,6 +459,7 @@ export async function getTodaySalesSummary(cashierId: string): Promise<ClosingSu
     totalCash: 0,
     totalTransfer: 0,
     totalQR: 0,
+    totalCard: 0,
     billCount: 0,
     voidedCount,
   }
@@ -451,7 +470,8 @@ export async function getTodaySalesSummary(cashierId: string): Promise<ClosingSu
     summary.billCount += row._count._all
     if (row.paymentMethod === "CASH") summary.totalCash += value
     else if (row.paymentMethod === "TRANSFER") summary.totalTransfer += value
-    else summary.totalQR += value
+    else if (row.paymentMethod === "QR") summary.totalQR += value
+    else summary.totalCard += value
   }
 
   return summary
@@ -469,6 +489,7 @@ export async function getTodayClosing(cashierId: string) {
     totalCash: toNumber(row.totalCash),
     totalTransfer: toNumber(row.totalTransfer),
     totalQR: toNumber(row.totalQR),
+    totalCard: toNumber(row.totalCard),
     billCount: row.billCount,
     voidedCount: row.voidedCount,
     countedCash: toNumber(row.countedCash),
@@ -493,6 +514,7 @@ export async function listClosings(params: { cashierId?: string; limit?: number 
     totalCash: toNumber(row.totalCash),
     totalTransfer: toNumber(row.totalTransfer),
     totalQR: toNumber(row.totalQR),
+    totalCard: toNumber(row.totalCard),
     billCount: row.billCount,
     voidedCount: row.voidedCount,
     countedCash: toNumber(row.countedCash),
@@ -1049,4 +1071,205 @@ export async function listQrCodes(): Promise<QrCodeRow[]> {
       invalidatedCount: table.qrCodes.filter((qr) => qr.status === "INVALIDATED").length,
     }
   })
+}
+
+// ───────────────────── ชำระเงิน / ปิดบิล (Phase 10) ─────────────────────
+
+export type BillingLine = {
+  id: string
+  name: string
+  quantity: number
+  unitPrice: number
+  subtotal: number
+  options: string[]
+}
+
+export type BillingView = {
+  tableId: string
+  tableCode: string
+  sessionId: string
+  sessionStatus: "OPEN" | "AWAITING_BILL"
+  openedAt: Date
+  mergedTableCodes: string[]
+  storeName: string
+  lines: BillingLine[]
+  itemsTotal: number
+  servicePercent: number
+  serviceCharge: number
+  total: number
+}
+
+/// ใบเสร็จของโต๊ะสำหรับหน้าปิดบิลฝั่งพนักงาน (F17) — ยอดคิดจาก `computeBillTotals` ตัวเดียวกับที่ปิดบิลจริง
+/// รายการที่ถูกยกเลิกไม่เข้าบิล และรายการซ้ำ (ชื่อ+ตัวเลือก+ราคาเดียวกัน) ถูกยุบเป็นบรรทัดเดียว
+export async function getBillingView(tableId: string): Promise<BillingView | null> {
+  const table = await prisma.table.findUnique({
+    where: { id: tableId },
+    select: { id: true, primaryTableId: true },
+  })
+  if (!table) return null
+
+  // โต๊ะรองไม่มีบิลของตัวเอง — ปิดบิลที่โต๊ะหลักเสมอ
+  const targetId = table.primaryTableId ?? table.id
+
+  const [session, settings, merged] = await Promise.all([
+    prisma.tableSession.findFirst({
+      where: { tableId: targetId, status: { in: ["OPEN", "AWAITING_BILL"] } },
+      orderBy: { openedAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        openedAt: true,
+        table: { select: { id: true, code: true } },
+        orders: {
+          orderBy: { orderNumber: "asc" },
+          select: {
+            items: {
+              where: { status: { not: "CANCELLED" } },
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                quantity: true,
+                unitPrice: true,
+                selectedOptionsSnapshot: true,
+                menuItem: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.storeSettings.findUnique({
+      where: { id: "default" },
+      select: { storeName: true, serviceChargePercent: true },
+    }),
+    prisma.table.findMany({ where: { primaryTableId: targetId }, select: { code: true } }),
+  ])
+
+  if (!session) return null
+
+  const raw = session.orders.flatMap((order) => order.items)
+
+  // ยุบบรรทัดที่เหมือนกันทุกประการเพื่อให้ใบเสร็จอ่านง่าย — คีย์รวมตัวเลือกไว้ด้วยจึงไม่ยุบข้ามตัวเลือก
+  const grouped = new Map<string, BillingLine>()
+  for (const item of raw) {
+    const options = parseOptions(item.selectedOptionsSnapshot).map((o) => o.optionName)
+    const unitPrice = toNumber(item.unitPrice)
+    const key = `${item.menuItem.name}|${unitPrice.toFixed(2)}|${options.join(",")}`
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.quantity += item.quantity
+      existing.subtotal = round2(existing.unitPrice * existing.quantity)
+      continue
+    }
+    grouped.set(key, {
+      id: item.id,
+      name: item.menuItem.name,
+      quantity: item.quantity,
+      unitPrice,
+      subtotal: round2(unitPrice * item.quantity),
+      options,
+    })
+  }
+
+  const lines = [...grouped.values()]
+  const servicePercent = toNumber(settings?.serviceChargePercent ?? 0)
+  const totals = computeBillTotals(lines, servicePercent)
+
+  return {
+    tableId: session.table.id,
+    tableCode: session.table.code,
+    sessionId: session.id,
+    sessionStatus: session.status as "OPEN" | "AWAITING_BILL",
+    openedAt: session.openedAt,
+    mergedTableCodes: merged.map((m) => m.code),
+    storeName: settings?.storeName ?? "MJD Mobile Order",
+    lines,
+    itemsTotal: totals.itemsTotal,
+    servicePercent,
+    serviceCharge: totals.serviceCharge,
+    total: totals.total,
+  }
+}
+
+export type CustomerPaymentStatus =
+  | {
+      state: "UNPAID"
+      sessionId: string
+      tableCode: string
+      itemsTotal: number
+      servicePercent: number
+      serviceCharge: number
+      total: number
+      awaitingBill: boolean
+    }
+  | { state: "PAID"; tableCode: string; saleNumber: string; total: number; paidAt: Date }
+  | { state: "UNKNOWN" }
+
+/// สถานะการชำระเงินสำหรับหน้า `/order/[qrToken]/pay/*` และ endpoint ที่หน้านั้นโพล
+///
+/// ต่างจาก `resolveCustomerSession` ตรงที่ **ต้องตอบได้แม้ QR ถูก invalidate ไปแล้ว** — เพราะการปิดบิล
+/// สำเร็จคือสิ่งที่ทำให้ DYNAMIC QR ใช้ไม่ได้ ถ้าใช้ resolver ตัวเดิม ลูกค้าจะเห็นหน้า error แทนหน้า "จ่ายสำเร็จ"
+export async function getCustomerPaymentStatus(qrToken: string): Promise<CustomerPaymentStatus> {
+  const qr = await prisma.qRCode.findUnique({
+    where: { token: qrToken },
+    select: { tableId: true, table: { select: { primaryTableId: true } } },
+  })
+  if (!qr) return { state: "UNKNOWN" }
+
+  const targetTableId = qr.table.primaryTableId ?? qr.tableId
+
+  const session = await prisma.tableSession.findFirst({
+    where: { tableId: targetTableId },
+    orderBy: { openedAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      table: { select: { code: true } },
+      sale: { select: { saleNumber: true, total: true, createdAt: true } },
+      orders: {
+        select: {
+          items: {
+            where: { status: { not: "CANCELLED" } },
+            select: { quantity: true, unitPrice: true },
+          },
+        },
+      },
+    },
+  })
+  if (!session) return { state: "UNKNOWN" }
+
+  if (session.sale) {
+    return {
+      state: "PAID",
+      tableCode: session.table.code,
+      saleNumber: session.sale.saleNumber,
+      total: toNumber(session.sale.total),
+      paidAt: session.sale.createdAt,
+    }
+  }
+
+  if (session.status === "CLOSED" || session.status === "CANCELLED") return { state: "UNKNOWN" }
+
+  const settings = await prisma.storeSettings.findUnique({
+    where: { id: "default" },
+    select: { serviceChargePercent: true },
+  })
+  const servicePercent = toNumber(settings?.serviceChargePercent ?? 0)
+  const totals = computeBillTotals(
+    session.orders
+      .flatMap((order) => order.items)
+      .map((item) => ({ quantity: item.quantity, unitPrice: toNumber(item.unitPrice) })),
+    servicePercent,
+  )
+
+  return {
+    state: "UNPAID",
+    sessionId: session.id,
+    tableCode: session.table.code,
+    itemsTotal: totals.itemsTotal,
+    servicePercent,
+    serviceCharge: totals.serviceCharge,
+    total: totals.total,
+    awaitingBill: session.status === "AWAITING_BILL",
+  }
 }

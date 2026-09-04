@@ -6,7 +6,13 @@ import { toast } from "sonner"
 import { createSale } from "@/app/actions/sales"
 import { formatBaht, formatNumber } from "@/lib/format"
 import type { ProductOption } from "@/lib/queries"
-import { PAYMENT_METHOD_LABEL, type FieldErrors, type PaymentMethodValue, type ReceiptData } from "@/lib/types"
+import {
+  PAYMENT_METHOD_LABEL,
+  RETAIL_PAYMENT_METHODS,
+  type FieldErrors,
+  type PaymentMethodValue,
+  type ReceiptData,
+} from "@/lib/types"
 import { Receipt } from "@/components/receipt"
 import { IconPlus, IconSearch, IconSpinner, IconTrash, IconWallet } from "@/components/icons"
 import {
@@ -23,7 +29,8 @@ type CartLine = {
   quantity: number
 }
 
-const PAYMENT_METHODS: PaymentMethodValue[] = ["CASH", "TRANSFER", "QR"]
+// PROMPTPAY/CARD เป็นของช่องทาง MJD Mobile Order เท่านั้น จึงไม่โผล่บนหน้าขายหน้าร้าน (Phase 10)
+const PAYMENT_METHODS: readonly PaymentMethodValue[] = RETAIL_PAYMENT_METHODS
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100

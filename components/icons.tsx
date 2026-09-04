@@ -34,4 +34,6 @@ export {
   ChefHat as IconKitchen,
   QrCode as IconQr,
   Store as IconStore,
+  CreditCard as IconCard,
+  Banknote as IconCash,
 } from "lucide-react"

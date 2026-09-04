@@ -78,7 +78,7 @@ export default async function ReportsPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
         <section className="card-ui">
           <div className="panel-head">
-            <h2 className="t-h2">สินค้าขายดี 30 วัน</h2>
+            <h2 className="t-h2">รายการขายดี 30 วัน</h2>
           </div>
           {topSelling.length === 0 ? (
             <p className="t-body" style={{ padding: 24 }}>
@@ -88,7 +88,7 @@ export default async function ReportsPage() {
             <ol style={{ display: "flex", flexDirection: "column" }}>
               {topSelling.map((p, index) => (
                 <li
-                  key={p.sku}
+                  key={`${p.name}|${p.sku}`}
                   className="row"
                   style={{ justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid var(--line)" }}
                 >
@@ -96,7 +96,8 @@ export default async function ReportsPage() {
                     <span className="chip chip-brand num">{index + 1}</span>
                     <span>
                       <span style={{ fontWeight: 500 }}>{p.name}</span>{" "}
-                      <span className="t-caption num">({p.sku})</span>
+                      {/* เมนูของ MJD Mobile Order ไม่มี SKU — แสดงช่องทางแทนเพื่อไม่ให้เห็นวงเล็บว่าง */}
+                      <span className="t-caption num">({p.sku || "Mobile Order"})</span>
                     </span>
                   </span>
                   <span className="row" style={{ gap: 12 }}>

@@ -100,6 +100,7 @@ async function seedSales() {
         const unitPrice = Number(product.price)
         items.push({
           productId: product.id,
+          name: product.name,
           quantity: line.quantity,
           unitPrice,
           subtotal: round2(unitPrice * line.quantity),
@@ -134,6 +135,7 @@ async function seedSales() {
           data: {
             saleId: sale.id,
             productId: item.productId,
+            name: item.name,
             quantity: item.quantity,
             unitPrice: item.unitPrice.toFixed(2),
             subtotal: item.subtotal.toFixed(2),

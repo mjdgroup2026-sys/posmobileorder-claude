@@ -76,6 +76,14 @@ export function CheckBillView({ qrToken, view }: { qrToken: string; view: Custom
         </div>
       </section>
 
+      <Link
+        href={`/order/${qrToken}/pay`}
+        className="btn btn-primary btn-lg btn-block"
+        aria-disabled={items.length === 0}
+      >
+        ชำระเงินเอง (พร้อมเพย์/บัตร)
+      </Link>
+
       {requested ? (
         <>
           <div className="alert-banner info">
@@ -98,7 +106,7 @@ export function CheckBillView({ qrToken, view }: { qrToken: string; view: Custom
       )}
 
       <p className="t-caption" style={{ textAlign: "center" }}>
-        การชำระเงินผ่าน PromptPay/บัตร จะเปิดใช้งานใน Phase 10 — ตอนนี้ชำระกับพนักงานที่โต๊ะได้เลย
+        ชำระเองผ่านพร้อมเพย์ได้ทันที หรือกด &ldquo;ขอเช็กบิล&rdquo; ให้พนักงานมารับชำระที่โต๊ะ
       </p>
     </div>
   )

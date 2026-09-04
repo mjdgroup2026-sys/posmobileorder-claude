@@ -277,6 +277,15 @@ export function TableOverview({ tables }: { tables: TableCard[] }) {
                     <Link href={`/mobile-order/tables/${table.id}`} className="btn btn-primary btn-sm">
                       ดูออร์เดอร์
                     </Link>
+                    {/* โต๊ะที่ลูกค้ากดเช็กบิลแล้ว ต้องกดปิดบิลได้จากผังโต๊ะเลย ไม่ต้องเข้าหน้ารายละเอียดก่อน */}
+                    {table.status === "AWAITING_BILL" ? (
+                      <Link
+                        href={`/mobile-order/tables/${table.id}/billing`}
+                        className="btn btn-accent btn-sm"
+                      >
+                        ปิดบิล
+                      </Link>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-subtle btn-sm"

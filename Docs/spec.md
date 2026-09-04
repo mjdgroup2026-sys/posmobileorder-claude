@@ -750,8 +750,7 @@ enum ResourceKey {
 - [x] **ปุ่มยกเลิกรายการทีละรายการปรากฏเฉพาะรายการที่ `status = รอครัวรับ`** — หายไปทันทีที่ครัวเริ่มทำ (กด server
       ตรงก็ถูกปฏิเสธเช่นกัน)
 - [x] log ประวัติการแจ้งเตือนของโต๊ะนี้แสดงอยู่ในหน้าเดียวกัน
-- [ ] Footer: ยอดรวม, พิมพ์ทิกเก็ตซ้ำ, ปุ่มไปหน้าปิดบิล
-      > ยอดรวม + พิมพ์ทิกเก็ตซ้ำเสร็จแล้ว · **ปุ่มไปหน้าปิดบิลรอ Phase 10** (หน้า billing ยังไม่มี)
+- [x] Footer: ยอดรวม, พิมพ์ทิกเก็ตซ้ำ, ปุ่มไปหน้าปิดบิล
 
 ### F14 — สั่งอาหารผ่าน QR Code (Customer Ordering Flow)
 - [x] สแกน QR → เปิด/เข้า session อัตโนมัติ ไม่ต้องรอพนักงาน
@@ -770,13 +769,16 @@ enum ResourceKey {
 - [x] ตั้ง `TableSession.status = AWAITING_BILL`, โต๊ะขึ้นสถานะ "รอเช็กบิล" บนผังโต๊ะ
 
 ### F17 — ชำระเงิน (PromptPay + Card/EDC) และปิดโต๊ะอัตโนมัติ
-- [ ] เลือกวิธีจ่าย: PromptPay (default) หรือ Card ที่เคาน์เตอร์
-- [ ] PromptPay: แสดง QR + countdown, auto-poll สถานะ, webhook ยืนยันแล้วปิดโต๊ะให้อัตโนมัติโดยลูกค้าไม่ต้องกด
+- [x] เลือกวิธีจ่าย: PromptPay (default) หรือ Card ที่เคาน์เตอร์ — `/order/[qrToken]/pay`
+- [x] PromptPay: แสดง QR + countdown, auto-poll สถานะ, webhook ยืนยันแล้วปิดโต๊ะให้อัตโนมัติโดยลูกค้าไม่ต้องกด
       อะไรเพิ่ม
-- [ ] Card: พนักงานกดยืนยันจากฝั่ง POS หลัง EDC ตัดบัตรสำเร็จ → ปิดโต๊ะอัตโนมัติเช่นกัน
-- [ ] ปิดโต๊ะสำเร็จ → สร้าง `Sale`+`SaleItem` ที่ปรากฏถูกต้องใน `/pos/history`, Dashboard, Reports เหมือนบิลขาย
+      > payload EMVCo สร้างเองที่ `lib/promptpay.ts` (ตั้งค่าด้วย env `PROMPTPAY_ID`) ไม่ผูกกับผู้ให้บริการ
+      > รายใด · **ยังไม่ได้ต่อ provider จริง** — เปิดใช้เส้นทางอัตโนมัติด้วย `PAYMENT_WEBHOOK_SECRET`
+      > (ไม่ตั้ง = endpoint ตอบ 503 และร้านปิดบิลด้วยมือจากหน้า billing ได้ตามปกติ)
+- [x] Card: พนักงานกดยืนยันจากฝั่ง POS หลัง EDC ตัดบัตรสำเร็จ → ปิดโต๊ะอัตโนมัติเช่นกัน
+- [x] ปิดโต๊ะสำเร็จ → สร้าง `Sale`+`SaleItem` ที่ปรากฏถูกต้องใน `/pos/history`, Dashboard, Reports เหมือนบิลขาย
       หน้าร้าน
-- [ ] DYNAMIC QR ของโต๊ะนั้นถูก invalidate ทันที; STATIC QR ไม่ถูกแตะต้อง
+- [x] DYNAMIC QR ของโต๊ะนั้นถูก invalidate ทันที; STATIC QR ไม่ถูกแตะต้อง
 
 ### F18 — Kitchen Display System (KDS) + fallback ไม่มี KDS
 - [ ] KDS แสดงทิกเก็ต 3 คอลัมน์ (ใหม่/กำลังปรุง/พร้อมเสิร์ฟ) พร้อมตัวนับเวลาที่ผ่านไปต่อทิกเก็ต
@@ -1248,13 +1250,23 @@ enum ResourceKey {
 > `TableSession` ที่ `OPEN` อยู่ของโต๊ะนั้น ในทรานแซคชันเดียวกันตอนเปิด session ใหม่ — ป้องกันลูกค้า refresh
 > หน้า payment-success แล้วดันไปเปิด session ใหม่ซ้ำด้วย token เดิมก่อนพนักงานพิมพ์ใบใหม่ทัน
 
-### ⏭️ Phase 10 — Payment Integration (PromptPay Webhook + Card/EDC) & Auto-Close
-- [ ] Route handler รับ webhook จากธนาคาร/PromptPay provider — idempotent ด้วย unique payment reference
-- [ ] แก้ enum `PaymentMethod` เพิ่ม `PROMPTPAY`, `CARD` + migration
-- [ ] Server action `closeTableSessionByPayment` — atomic: สร้าง `Sale`+`SaleItem`, ปิด `TableSession`,
+### ✅ Phase 10 — Payment Integration (PromptPay Webhook + Card/EDC) & Auto-Close
+- [x] Route handler รับ webhook จากธนาคาร/PromptPay provider — idempotent ด้วย unique payment reference
+      > `POST /api/payments/webhook` · ยืนยันตัวตนด้วย header `x-webhook-secret` เทียบแบบ timing-safe
+      > payload เป็นกลาง (`reference` + `sessionId`/`qrToken` + `amount`) ถ้า provider จริงส่งรูปอื่นให้
+      > เขียน adapter ที่ไฟล์นี้จุดเดียว
+- [x] แก้ enum `PaymentMethod` เพิ่ม `PROMPTPAY`, `CARD` + migration
+      > `20260903070000_add_payment` — เพิ่ม `Sale.paymentReference` (unique) และทำให้ `SaleItem` อ้าง
+      > ได้ทั้ง `Product` (หน้าร้าน) และ `MenuItem` (Mobile Order) พร้อมชื่อรายการแบบ snapshot ในแถวเอง ·
+      > `20260904030000_add_closing_card` — แยกยอดพร้อมเพย์/บัตรออกจากถัง "สแกน QR" ในใบปิดยอด
+- [x] Server action `closeTableSessionByPayment` — atomic: สร้าง `Sale`+`SaleItem`, ปิด `TableSession`,
       invalidate DYNAMIC QR, คืนสถานะโต๊ะ
-- [ ] หน้าปิดบิล `/mobile-order/tables/[tableId]/billing` (ใบเสร็จ, service charge, ปุ่มยืนยัน Card)
-- [ ] ตรวจสอบ: บิลจาก mobile order ปรากฏถูกต้องใน `/pos/history`, Dashboard, `/reports`, `/pos/closing`
+      > ตรรกะจริงอยู่ที่ `lib/close-session.ts` (`closeSessionWithPayment`) ใช้ร่วมกันทั้งฝั่ง webhook และ
+      > `confirmMobilePayment` ที่พนักงานกด — เส้นทางเดียวกันเป๊ะ จึงไม่มีทางได้ผลต่างกัน
+- [x] หน้าปิดบิล `/mobile-order/tables/[tableId]/billing` (ใบเสร็จ, service charge, ปุ่มยืนยัน Card)
+- [x] ตรวจสอบ: บิลจาก mobile order ปรากฏถูกต้องใน `/pos/history`, Dashboard, `/reports`, `/pos/closing`
+      — `__tests__/integration/payment.test.ts` (18 เคส) ครอบทั้ง idempotency, ปิดบิลพร้อมกัน, ค่าบริการ,
+      invalidate QR, คืนโต๊ะที่รวมไว้ และการปรากฏในทุกหน้ารายงาน
 
 > ⚠️ **กับดัก — webhook ซ้ำ/มาไม่เรียงลำดับ**: bank webhook อาจยิงซ้ำหรือมาช้ากว่าที่คาด ต้อง guard ด้วย
 > unique reference ก่อนสร้าง `Sale` มิฉะนั้นจะปิดบิล/สร้างบิลซ้ำ
