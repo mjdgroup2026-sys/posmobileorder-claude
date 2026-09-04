@@ -15,8 +15,9 @@ const ALWAYS_PUBLIC_PREFIXES = [
 ]
 
 // หน้า auth ของพนักงาน — เข้าได้โดยไม่ต้องล็อกอิน แต่ถ้าล็อกอินอยู่แล้วให้เด้งกลับหน้าแรก
-// หมายเหตุ: "/register" ถูกถอดออกโดยตั้งใจ — ปิดการสมัครเองแล้ว (ดู disableSignUp ใน lib/auth.ts)
-const AUTH_PAGE_PREFIXES = ["/login", "/forgot-password", "/reset-password"]
+// "/register" เปิดคืนแล้วใน Phase 5 — ด่านจริงที่กันคนนอกคือ allowlist ใน lib/auth.ts
+// ไม่ใช่การซ่อนหน้านี้ (endpoint /api/auth/sign-up/email เรียกตรงได้อยู่ดี)
+const AUTH_PAGE_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password"]
 
 function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))

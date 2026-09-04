@@ -1,8 +1,10 @@
 import { betterAuth } from "better-auth"
+import { createAuthMiddleware, APIError } from "better-auth/api"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { nextCookies } from "better-auth/next-js"
 import { prisma } from "@/lib/prisma"
 import { sendResetPasswordMail, sendVerificationMail } from "@/lib/mail"
+import { isSignupAllowed, readSignupPolicy } from "@/lib/signup-allowlist"
 
 /// Better Auth ตั้ง callbackURL ปลายทางเป็น "/" มาให้ — เปลี่ยนเป็น /verify-email เพื่อให้ผู้ใช้
 /// เห็นผลลัพธ์การยืนยัน (สำเร็จ/ลิงก์หมดอายุ) แทนที่จะถูกโยนไปหน้าแรกแล้วเดาเอาเอง
@@ -21,11 +23,14 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    // ปิดการสมัครเอง — ผู้ดูแลสร้างบัญชีให้เท่านั้น
-    // ถ้าเปิดไว้ ใครก็สมัครแล้วได้ session ทันที (autoSignIn ทำงานเมื่อไม่บังคับยืนยันอีเมล)
-    // ซึ่งแปลว่าผ่าน requireUser() ได้ทุก Server Action — เท่ากับพนักงานเต็มตัว
-    // จะเปิดคืนได้ต่อเมื่อมี invite/allowlist (requireEmailVerification เปิดแล้วตั้งแต่ Phase 5)
-    disableSignUp: true,
+    // เปิดสมัครเองได้ แต่ต้องผ่านด่าน allowlist เท่านั้น (hooks.before ด้านล่าง)
+    //
+    // ⚠️ v1 ไม่มีระบบสิทธิ์ตามบทบาท — `requireUser()` เช็คแค่ว่าล็อกอินอยู่ ใครสมัครสำเร็จ
+    //    จึงกลายเป็นพนักงานเต็มตัวทันที (แก้สต็อก ขาย void บิล ปิดยอด เห็นยอดขายทั้งหมด)
+    //    ด่านที่กันคนนอกจึงมีสองชั้น และต้องมีครบทั้งคู่:
+    //      1. allowlist ที่ hooks.before — กันตั้งแต่ก่อนสร้าง user
+    //      2. requireEmailVerification — ต้องคุมอีเมลนั้นได้จริงถึงจะล็อกอินได้
+    disableSignUp: false,
     // ★ ต้องยืนยันอีเมลก่อนจึงล็อกอินได้ — ล็อกอินก่อนยืนยันได้ 403 code EMAIL_NOT_VERIFIED
     //   บัญชีที่ผู้ดูแลสร้างด้วย `pnpm db:create-user` ถูกตั้ง emailVerified = true มาแล้ว
     //   จึงล็อกอินได้ทันทีโดยไม่ต้องรออีเมล
@@ -48,6 +53,23 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
+  },
+  hooks: {
+    // ★ ด่านกันคนนอกสมัคร — ทำงานก่อนสร้าง user เสมอ ไม่ว่าคำขอจะมาจากหน้า /register
+    //   หรือยิง POST /api/auth/sign-up/email ตรง ๆ · ห้ามพึ่งการซ่อนหน้าเว็บอย่างเดียว
+    //   ด้วยเหตุผลเดียวกับกติกาข้อ 5 (Server Action ถูกเรียกตรงได้)
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-up/email") return
+
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email : ""
+      if (isSignupAllowed(email)) return
+
+      // แยกข้อความตามสาเหตุ เพื่อให้ผู้ดูแลรู้ว่า "ลืมตั้ง env" ไม่ใช่ "ผู้ใช้กรอกผิด"
+      const message = readSignupPolicy().unconfigured
+        ? "ระบบยังไม่ได้เปิดรับสมัครสมาชิก กรุณาติดต่อผู้ดูแลระบบ"
+        : "อีเมลนี้ไม่อยู่ในรายชื่อที่สมัครได้ กรุณาใช้อีเมลขององค์กร หรือติดต่อผู้ดูแลระบบ"
+      throw new APIError("FORBIDDEN", { code: "EMAIL_NOT_ALLOWED", message })
+    }),
   },
   // ต้องอยู่ท้ายสุดเสมอ — ทำให้ Server Action เซ็ต cookie ได้
   plugins: [nextCookies()],

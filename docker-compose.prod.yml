@@ -46,6 +46,10 @@ x-app-base: &app-base
     # ชำระเงิน MJD Mobile Order (Phase 10) — ไม่ตั้ง = ปุ่มพร้อมเพย์ปิด และ webhook ตอบ 503
     PROMPTPAY_ID: ${PROMPTPAY_ID:-}
     PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+    # allowlist การสมัครสมาชิกเอง (Phase 5) — ไม่ตั้งเลย = สมัครไม่ได้สักคน (fail closed)
+    # v1 ไม่มี RBAC ใครสมัครสำเร็จเป็นพนักงานเต็มตัวทันที ด่านนี้จึงห้ามหาย
+    SIGNUP_ALLOWED_EMAILS: ${SIGNUP_ALLOWED_EMAILS:-}
+    SIGNUP_ALLOWED_DOMAINS: ${SIGNUP_ALLOWED_DOMAINS:-}
   # image มี HEALTHCHECK ในตัวแล้ว (ดู Dockerfile stage runner) จึงไม่ประกาศซ้ำที่นี่
   depends_on:
     db:

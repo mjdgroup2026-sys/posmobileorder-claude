@@ -2,21 +2,27 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth-client"
 import { IconSpinner } from "@/components/icons"
 
+/// สมัครสมาชิกเอง (เปิดใน Phase 5) — ผ่านได้เฉพาะอีเมลที่อยู่ใน allowlist ฝั่ง server
+/// (`SIGNUP_ALLOWED_EMAILS` / `SIGNUP_ALLOWED_DOMAINS` → hooks.before ใน lib/auth.ts)
+///
+/// สมัครเสร็จ **ยังล็อกอินไม่ได้ทันที** เพราะ `requireEmailVerification: true`
+/// หน้าจึงเปลี่ยนเป็นการ์ด "ตรวจอีเมลของคุณ" แทนการเด้งไปหน้าแรก ซึ่งจะถูกดีดกลับ /login อยู่ดี
 export default function RegisterPage() {
-  const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
+  const [resent, setResent] = useState(false)
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
 
     const form = new FormData(event.currentTarget)
+    const email = String(form.get("email") ?? "")
     const password = String(form.get("password") ?? "")
     if (password.length < 8) {
       setError("รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร")
@@ -30,21 +36,68 @@ export default function RegisterPage() {
     setPending(true)
     const { error: authError } = await authClient.signUp.email({
       name: String(form.get("name") ?? ""),
-      email: String(form.get("email") ?? ""),
+      email,
       password,
     })
 
     if (authError) {
       setPending(false)
+      // 403 = อีเมลไม่อยู่ใน allowlist — ข้อความจาก server บอกสาเหตุตรงจุดแล้ว ใช้ต่อได้เลย
+      if (authError.status === 403) {
+        setError(authError.message ?? "อีเมลนี้ยังสมัครไม่ได้ กรุณาติดต่อผู้ดูแลระบบ")
+        return
+      }
       setError(
         authError.status === 422 ? "อีเมลนี้ถูกใช้สมัครไปแล้ว" : "สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
       )
       return
     }
 
-    toast.success("สมัครสมาชิกสำเร็จ")
-    router.push("/")
-    router.refresh()
+    setPending(false)
+    setRegisteredEmail(email)
+  }
+
+  async function resend() {
+    if (!registeredEmail) return
+    setPending(true)
+    try {
+      await authClient.sendVerificationEmail({ email: registeredEmail, callbackURL: "/verify-email" })
+      setResent(true)
+      toast.success("ส่งอีเมลยืนยันใหม่แล้ว")
+    } catch {
+      toast.error("ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (registeredEmail) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div>
+          <h1 className="t-h2">ตรวจอีเมลของคุณ</h1>
+          <p className="t-caption" style={{ marginTop: 4 }}>
+            เราส่งลิงก์ยืนยันไปที่ <span className="num">{registeredEmail}</span> แล้ว
+            กดลิงก์ในอีเมลเพื่อเปิดใช้งานบัญชี
+          </p>
+        </div>
+
+        <div className="alert-banner info">
+          ต้องยืนยันอีเมลก่อนจึงเข้าสู่ระบบได้ · ถ้าไม่เจอในกล่องจดหมาย ลองดูในเมลขยะ
+        </div>
+
+        {resent ? <div className="alert-banner info">ส่งลิงก์ยืนยันใหม่ให้แล้ว</div> : null}
+
+        <button type="button" className="btn btn-subtle btn-block" disabled={pending || resent} onClick={resend}>
+          {pending ? <IconSpinner size={17} className="animate-spin" aria-hidden /> : null}
+          ส่งอีเมลยืนยันอีกครั้ง
+        </button>
+
+        <Link href="/login" className="btn btn-primary btn-block">
+          ไปหน้าเข้าสู่ระบบ
+        </Link>
+      </div>
+    )
   }
 
   return (
@@ -52,7 +105,7 @@ export default function RegisterPage() {
       <div>
         <h1 className="t-h2">สมัครสมาชิก</h1>
         <p className="t-caption" style={{ marginTop: 4 }}>
-          สร้างบัญชีใหม่เพื่อเข้าใช้งานระบบหลังร้าน
+          สร้างบัญชีใหม่เพื่อเข้าใช้งานระบบหลังร้าน — ใช้ได้เฉพาะอีเมลขององค์กร
         </p>
       </div>
 
