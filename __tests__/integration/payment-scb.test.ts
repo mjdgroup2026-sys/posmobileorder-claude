@@ -1,0 +1,273 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import type { ActionResult } from "@/lib/types"
+import {
+  createTestMenuItem,
+  createTestOrder,
+  createTestOrderItem,
+  createTestQrCode,
+  createTestTable,
+  disconnectTestDb,
+  ensureTestUser,
+  isTestDbReachable,
+  resetDb,
+  setStoreSettings,
+  testPrisma,
+} from "../helpers/db"
+import { makeFormData } from "../helpers/form"
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
+vi.mock("@/lib/session", () => ({
+  requireUser: vi.fn(async () => ({ id: "test-user", name: "ผู้ทดสอบ", email: "test@example.com" })),
+  getSession: vi.fn(async () => ({ user: { id: "test-user" } })),
+}))
+
+/// mock เฉพาะการยิงออกไปหาธนาคาร — ตรรกะที่เหลือใน scb.ts (เช่น confirmationResponse) ใช้ของจริง
+const inquireMock = vi.fn()
+vi.mock("@/lib/payment-provider/scb", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/payment-provider/scb")>()
+  return { ...actual, inquireBillPayment: (...args: unknown[]) => inquireMock(...args) }
+})
+
+const WEBHOOK_SECRET = "test-secret-0123456789abcdef"
+
+const dbReady = await isTestDbReachable()
+
+describe.skipIf(!dbReady)("payment confirmation ของ SCB (Phase 10)", () => {
+  let openTableSession: (formData: FormData) => Promise<ActionResult<{ sessionId: string }>>
+  let issuePaymentIntent: typeof import("@/lib/payment-intent").issuePaymentIntent
+  let POST: typeof import("@/app/api/payments/webhook/scb/[secret]/route").POST
+
+  beforeAll(async () => {
+    process.env.SCB_WEBHOOK_SECRET = WEBHOOK_SECRET
+    const tables = await import("@/app/actions/tables")
+    const intents = await import("@/lib/payment-intent")
+    const route = await import("@/app/api/payments/webhook/scb/[secret]/route")
+    openTableSession = tables.openTableSession
+    issuePaymentIntent = intents.issuePaymentIntent
+    POST = route.POST
+  })
+
+  beforeEach(async () => {
+    await resetDb()
+    await ensureTestUser()
+    await setStoreSettings({ hasKDS: false, serviceChargePercent: "0.00" })
+    inquireMock.mockReset()
+  })
+
+  afterAll(async () => {
+    await disconnectTestDb()
+  })
+
+  /// โต๊ะที่มีออร์เดอร์รวม 260 บาท + PaymentIntent ที่ออก QR ไว้แล้ว
+  async function seedSessionWithIntent() {
+    const table = await createTestTable()
+    const qr = await createTestQrCode(table.id, { type: "DYNAMIC" })
+    const opened = await openTableSession(makeFormData({ qrToken: qr.token }))
+    expect(opened.ok).toBe(true)
+    const sessionId = opened.ok === true ? (opened.data?.sessionId ?? "") : ""
+
+    const menuA = await createTestMenuItem({ name: "ข้าวกะเพราหมู", price: "80.00" })
+    const menuB = await createTestMenuItem({ name: "ต้มยำกุ้ง", price: "100.00" })
+    const order = await createTestOrder(sessionId)
+    await createTestOrderItem(order.id, menuA.id, { quantity: 2, unitPrice: "80.00" })
+    await createTestOrderItem(order.id, menuB.id, { quantity: 1, unitPrice: "100.00" })
+
+    const intent = await issuePaymentIntent(sessionId, 260)
+    return { table, sessionId, intent }
+  }
+
+  function callWebhook(secret: string, payload: unknown) {
+    const request = new Request(`http://localhost/api/payments/webhook/scb/${secret}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const context = { params: Promise.resolve({ secret }) }
+    return POST(request as Parameters<typeof POST>[0], context as Parameters<typeof POST>[1])
+  }
+
+  it("ธนาคารยืนยันและยอดตรง → ปิดบิลอัตโนมัติเป็น Sale channel MOBILE_ORDER", async () => {
+    const db = testPrisma()
+    const { table, sessionId, intent } = await seedSessionWithIntent()
+
+    inquireMock.mockResolvedValue({
+      ok: true,
+      data: { transactionId: "SCBTX-0001", amount: 260, billPaymentRef1: intent.ref1 },
+    })
+
+    const response = await callWebhook(WEBHOOK_SECRET, {
+      transactionId: "SCBTX-0001",
+      billPaymentRef1: intent.ref1,
+      amount: "260.00",
+      transactionDateandTime: "2026-09-07T12:30:00.000+07:00",
+    })
+    const body = await response.json()
+
+    // ต้องตอบตามรูปแบบที่ SCB บังคับ ไม่งั้นธนาคารถือว่าล้มเหลวแล้วยิงซ้ำ 3 ครั้ง
+    expect(body.resCode).toBe("00")
+    expect(body.resDesc).toBe("success")
+    expect(body.transactionId).toBe("SCBTX-0001")
+
+    const sale = await db.sale.findFirst({ where: { tableSessionId: sessionId } })
+    expect(sale?.channel).toBe("MOBILE_ORDER")
+    expect(sale?.paymentMethod).toBe("PROMPTPAY")
+    expect(sale?.paymentReference).toBe("SCBTX-0001")
+    expect(Number(sale?.total)).toBe(260)
+
+    const reloadedIntent = await db.paymentIntent.findUnique({ where: { id: intent.id } })
+    expect(reloadedIntent?.status).toBe("PAID")
+    expect(reloadedIntent?.transactionId).toBe("SCBTX-0001")
+
+    const session = await db.tableSession.findUnique({ where: { id: sessionId } })
+    expect(session?.status).toBe("CLOSED")
+    const reloadedTable = await db.table.findUnique({ where: { id: table.id } })
+    expect(reloadedTable?.status).toBe("EMPTY")
+
+    // ตรวจว่าถามกลับไปที่ธนาคารจริง ด้วยวันที่จาก payload ไม่ใช่วันที่ของเครื่อง server
+    expect(inquireMock).toHaveBeenCalledWith({ transactionDate: "2026-09-07", ref1: intent.ref1 })
+  })
+
+  it("ธนาคารยิง callback ซ้ำด้วย transactionId เดิม → ไม่สร้างบิลซ้ำ และยังตอบสำเร็จ", async () => {
+    const db = testPrisma()
+    const { sessionId, intent } = await seedSessionWithIntent()
+
+    inquireMock.mockResolvedValue({
+      ok: true,
+      data: { transactionId: "SCBTX-DUP", amount: 260, billPaymentRef1: intent.ref1 },
+    })
+
+    const payload = {
+      transactionId: "SCBTX-DUP",
+      billPaymentRef1: intent.ref1,
+      amount: "260.00",
+      transactionDateandTime: "2026-09-07T12:30:00.000+07:00",
+    }
+
+    const first = await callWebhook(WEBHOOK_SECRET, payload)
+    const second = await callWebhook(WEBHOOK_SECRET, payload)
+    const third = await callWebhook(WEBHOOK_SECRET, payload)
+
+    expect((await first.json()).resCode).toBe("00")
+    expect((await second.json()).resCode).toBe("00")
+    expect((await third.json()).resCode).toBe("00")
+
+    const sales = await db.sale.findMany({ where: { tableSessionId: sessionId } })
+    expect(sales).toHaveLength(1)
+
+    // รอบซ้ำต้องตัดจบตั้งแต่เจอ Sale เดิม ไม่ต้องไปรบกวนธนาคารอีก
+    expect(inquireMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("ยอดที่ธนาคารยืนยันไม่ตรงกับบิล → ห้ามปิดบิล ต้องแจ้งพนักงานและ mark FAILED", async () => {
+    const db = testPrisma()
+    const { sessionId, intent } = await seedSessionWithIntent()
+
+    // ลูกค้าแก้จำนวนเงินในแอปธนาคารเป็น 200 ทั้งที่บิล 260
+    inquireMock.mockResolvedValue({
+      ok: true,
+      data: { transactionId: "SCBTX-SHORT", amount: 200, billPaymentRef1: intent.ref1 },
+    })
+
+    const response = await callWebhook(WEBHOOK_SECRET, {
+      transactionId: "SCBTX-SHORT",
+      billPaymentRef1: intent.ref1,
+      amount: "260.00", // payload โกหกว่าจ่ายครบ — ต้องไม่ถูกเชื่อ
+      transactionDateandTime: "2026-09-07T12:30:00.000+07:00",
+    })
+    expect((await response.json()).resCode).toBe("99")
+
+    const sale = await db.sale.findFirst({ where: { tableSessionId: sessionId } })
+    expect(sale).toBeNull()
+
+    const session = await db.tableSession.findUnique({ where: { id: sessionId } })
+    expect(session?.status).not.toBe("CLOSED")
+
+    const reloadedIntent = await db.paymentIntent.findUnique({ where: { id: intent.id } })
+    expect(reloadedIntent?.status).toBe("FAILED")
+
+    const notification = await db.notification.findFirst({
+      where: { tableSessionId: sessionId, type: "CHECK_BILL" },
+      orderBy: { createdAt: "desc" },
+    })
+    expect(notification?.reason).toContain("ยอดชำระไม่ตรงกับบิล")
+  })
+
+  it("ธนาคารบอกว่าไม่พบรายการ → ห้ามปิดบิล และไม่ mark FAILED เพราะอาจแค่ธนาคารตอบช้า", async () => {
+    const db = testPrisma()
+    const { sessionId, intent } = await seedSessionWithIntent()
+
+    inquireMock.mockResolvedValue({ ok: false, error: "ธนาคารไม่พบรายการชำระเงินที่ตรงกับเลขอ้างอิงนี้" })
+
+    const response = await callWebhook(WEBHOOK_SECRET, {
+      transactionId: "SCBTX-FAKE",
+      billPaymentRef1: intent.ref1,
+      amount: "260.00",
+    })
+    expect((await response.json()).resCode).toBe("99")
+
+    expect(await db.sale.findFirst({ where: { tableSessionId: sessionId } })).toBeNull()
+
+    // ยังเป็น PENDING เพื่อให้ callback รอบถัดไปของธนาคารยังปิดบิลได้ถ้ารายการมาช้า
+    const reloadedIntent = await db.paymentIntent.findUnique({ where: { id: intent.id } })
+    expect(reloadedIntent?.status).toBe("PENDING")
+  })
+
+  it("ref1 ที่ไม่รู้จัก → ปฏิเสธโดยไม่แตะฐานข้อมูล", async () => {
+    const db = testPrisma()
+    const { sessionId } = await seedSessionWithIntent()
+
+    const response = await callWebhook(WEBHOOK_SECRET, {
+      transactionId: "SCBTX-UNKNOWN",
+      billPaymentRef1: "NOTAREALREF1",
+      amount: "260.00",
+    })
+    expect((await response.json()).resCode).toBe("99")
+    expect(await db.sale.findFirst({ where: { tableSessionId: sessionId } })).toBeNull()
+    expect(inquireMock).not.toHaveBeenCalled()
+  })
+
+  it("path secret ผิด → 401 และไม่ถามธนาคารเลย", async () => {
+    const { intent } = await seedSessionWithIntent()
+
+    const response = await callWebhook("wrong-secret-value-aaaaaaaaaa", {
+      transactionId: "SCBTX-BAD",
+      billPaymentRef1: intent.ref1,
+      amount: "260.00",
+    })
+    expect(response.status).toBe(401)
+    expect(inquireMock).not.toHaveBeenCalled()
+  })
+
+  describe("การออก PaymentIntent", () => {
+    it("ยอดเท่าเดิม → ใช้ใบเดิมซ้ำ ไม่ออก QR ใบใหม่", async () => {
+      const db = testPrisma()
+      const { sessionId, intent } = await seedSessionWithIntent()
+
+      const again = await issuePaymentIntent(sessionId, 260)
+      expect(again.ref1).toBe(intent.ref1)
+
+      const all = await db.paymentIntent.findMany({ where: { tableSessionId: sessionId } })
+      expect(all).toHaveLength(1)
+    })
+
+    it("ยอดเปลี่ยน (ลูกค้าสั่งเพิ่ม) → ออกใบใหม่ และปิดใบเก่าเป็น EXPIRED", async () => {
+      const db = testPrisma()
+      const { sessionId, intent } = await seedSessionWithIntent()
+
+      const updated = await issuePaymentIntent(sessionId, 340)
+      expect(updated.ref1).not.toBe(intent.ref1)
+
+      const old = await db.paymentIntent.findUnique({ where: { id: intent.id } })
+      expect(old?.status).toBe("EXPIRED")
+
+      const fresh = await db.paymentIntent.findUnique({ where: { id: updated.id } })
+      expect(fresh?.status).toBe("PENDING")
+      expect(Number(fresh?.amount)).toBe(340)
+    })
+
+    it("ref1 ต้องเป็น A-Z0-9 ไม่เกิน 20 ตัวตามที่ SCB รับได้", async () => {
+      const { intent } = await seedSessionWithIntent()
+      expect(intent.ref1).toMatch(/^[A-Z0-9]{1,20}$/)
+    })
+  })
+})

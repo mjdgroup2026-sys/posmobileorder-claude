@@ -392,3 +392,21 @@ export const menuItemSchema = z.object({
     .transform((v) => (v === "" ? null : v)),
   isActive: z.coerce.boolean(),
 })
+
+// ───────────────── payment confirmation ของ SCB (Phase 10) ─────────────────
+
+/// payload ที่ SCB POST มาที่ปลายทาง payment confirmation
+///
+/// รับเฉพาะฟิลด์ที่เราใช้ตัดสินใจ ที่เหลือปล่อยผ่าน (ธนาคารส่งฟิลด์ต่างกันตามชนิดการชำระเงิน)
+/// **ห้ามเชื่อ payload นี้ตรง ๆ** — SCB ไม่แนบ signature หรือ credential ใด ๆ มาเลย
+/// ต้องเอา billPaymentRef1 ไปถามกลับที่ธนาคารด้วย inquireBillPayment() ก่อนปิดบิลเสมอ
+export const scbPaymentConfirmationSchema = z.object({
+  transactionId: z.string({ error: "ต้องมี transactionId" }).trim().min(1, "ต้องมี transactionId").max(120),
+  billPaymentRef1: z.string({ error: "ต้องมี billPaymentRef1" }).trim().min(1, "ต้องมี billPaymentRef1").max(20),
+  amount: z.coerce.number({ error: "amount ต้องเป็นตัวเลข" }).min(0).max(9_999_999),
+  /// yyyy-MM-ddThh:mm:ss.sss±hh:mm — ใช้ดึงวันที่ไปถาม inquiry (ธนาคารบังคับให้ระบุ transactionDate)
+  transactionDateandTime: z.string().trim().min(1).optional(),
+  billPaymentRef2: z.string().trim().max(20).optional(),
+  billPaymentRef3: z.string().trim().max(20).optional(),
+  currencyCode: z.string().trim().max(10).optional(),
+})

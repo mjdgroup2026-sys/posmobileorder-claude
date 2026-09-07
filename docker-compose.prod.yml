@@ -46,6 +46,16 @@ x-app-base: &app-base
     # ชำระเงิน MJD Mobile Order (Phase 10) — ไม่ตั้ง = ปุ่มพร้อมเพย์ปิด และ webhook ตอบ 503
     PROMPTPAY_ID: ${PROMPTPAY_ID:-}
     PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+    # SCB Open API — ไม่ตั้ง = ถอยไปใช้ QR พร้อมเพย์ที่สร้างเอง (พนักงานกดยืนยันเอง)
+    # ตั้งครบเมื่อไหร่ SCB จะเป็นคนออก QR ให้ ซึ่งพก ref1 ไปด้วยจึงปิดบิลอัตโนมัติได้
+    SCB_API_BASE: ${SCB_API_BASE:-}
+    SCB_API_KEY: ${SCB_API_KEY:-}
+    SCB_API_SECRET: ${SCB_API_SECRET:-}
+    SCB_BILLER_ID: ${SCB_BILLER_ID:-}
+    SCB_REF3_PREFIX: ${SCB_REF3_PREFIX:-}
+    # ส่วนหนึ่งของ URL ปลายทาง callback — ต้องตรงกับที่ลงทะเบียนไว้ในพอร์ทัล SCB เป๊ะ ๆ
+    # ไม่ตั้ง = endpoint ตอบ 503 (ปิดบิลด้วยมือยังทำได้ตามปกติ)
+    SCB_WEBHOOK_SECRET: ${SCB_WEBHOOK_SECRET:-}
     # allowlist การสมัครสมาชิกเอง (Phase 5) — ไม่ตั้งเลย = สมัครไม่ได้สักคน (fail closed)
     # v1 ไม่มี RBAC ใครสมัครสำเร็จเป็นพนักงานเต็มตัวทันที ด่านนี้จึงห้ามหาย
     SIGNUP_ALLOWED_EMAILS: ${SIGNUP_ALLOWED_EMAILS:-}

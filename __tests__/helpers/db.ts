@@ -57,7 +57,8 @@ export async function resetDb(): Promise<void> {
     [
       "TRUNCATE TABLE",
       '"sale_item", "stock_transaction", "cashier_closing", "member_point_transaction", "sale",',
-      '"mobile_order_item", "mobile_order", "notification", "line_notification_log", "table_session",',
+      '"mobile_order_item", "mobile_order", "notification", "line_notification_log",',
+      '"payment_intent", "table_session",',
       '"qr_code", "restaurant_table", "modifier_option", "modifier_group", "menu_item",',
       '"member", "store_settings", "product", "category",',
       // ตารางสิทธิ์ (§4) — ต้องล้างด้วย ไม่งั้นบทบาทจากเทสก่อนหน้าค้างแล้วชนกับ unique ของชื่อบทบาท

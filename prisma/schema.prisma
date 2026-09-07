@@ -400,6 +400,9 @@ model TableSession {
   orders        MobileOrder[]
   notifications Notification[]
   lineLogs      LineNotificationLog[]
+  /// คำขอชำระเงินที่เคยออก QR ให้โต๊ะนี้ — มีได้หลายใบ เพราะลูกค้ากดชำระเงินแล้วยกเลิก
+  /// กลับไปสั่งเพิ่มได้ ยอดจึงเปลี่ยน ต้องออก QR ใบใหม่ ส่วนใบเก่าค้างเป็น PENDING แล้วหมดอายุไป
+  paymentIntents PaymentIntent[]
   /// บิลที่เกิดตอนปิด session — FK อยู่ฝั่ง Sale (Sale.tableSessionId) ด้านเดียว
   /// ไม่เก็บ saleId ซ้ำที่นี่ เพราะ FK ชี้กันไปมาสองทางทำให้ลำดับการเขียนในทรานแซคชันพันกัน
   sale          Sale?
@@ -598,4 +601,45 @@ model MemberPointTransaction {
 
   @@index([memberId])
   @@map("member_point_transaction")
+}
+
+// ─────────────── การชำระเงินผ่านธนาคาร (Phase 10 — SCB Open API) ───────────────
+
+enum PaymentIntentStatus {
+  PENDING
+  PAID
+  /// QR หมดอายุก่อนลูกค้าจ่าย — เก็บไว้เพื่อไล่ดูย้อนหลัง ไม่ลบทิ้ง
+  EXPIRED
+  /// ธนาคารแจ้งกลับมาแล้วแต่ข้อมูลไม่ผ่านการตรวจ (เช่น ยอดไม่ตรง) — ต้องให้พนักงานตรวจเอง
+  FAILED
+}
+
+/// ตัวกลางแมป "เลขอ้างอิงที่ส่งไปกับ QR" กลับมาเป็นโต๊ะที่จ่ายเงิน
+///
+/// ทำไมต้องมีตารางนี้ ใส่ tableSessionId ลง ref1 ตรง ๆ ไม่ได้เหรอ:
+/// `ref1` ของ SCB รับได้แค่ตัวเลข+ตัวอักษรพิมพ์ใหญ่ ยาวไม่เกิน 20 ตัว แต่ `TableSession.id`
+/// เป็น cuid ~25 ตัวและมีตัวพิมพ์เล็ก จึงยัดลงไปตรง ๆ ไม่ได้ ต้องออกโค้ดสั้นแล้วแมปกลับ
+///
+/// ห้ามจับคู่การชำระเงินด้วย "ยอดเงิน" แทน — สองโต๊ะที่มียอดเท่ากันจะทำให้ปิดบิลผิดโต๊ะ
+model PaymentIntent {
+  id             String              @id @default(cuid())
+  /// โค้ดที่ส่งเป็น ref1 ให้ธนาคาร — ตัวเดียวที่เดินทางไปกับเงินแล้วกลับมาใน callback
+  ref1           String              @unique
+  tableSessionId String
+  /// ยอด ณ ตอนสร้าง QR — ต้องเทียบกับยอดที่ธนาคารแจ้งกลับมาก่อนปิดบิลเสมอ
+  /// ลูกค้าแก้จำนวนเงินในแอปธนาคารได้ ถ้าไม่เทียบจะปิดบิลทั้งที่ได้เงินไม่ครบ
+  amount         Decimal             @db.Decimal(12, 2)
+  status         PaymentIntentStatus @default(PENDING)
+  /// เลขรายการจากธนาคาร — unique กัน callback ยิงซ้ำอีกชั้นนอกเหนือจาก Sale.paymentReference
+  transactionId  String?             @unique
+  expiresAt      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  session TableSession @relation(fields: [tableSessionId], references: [id])
+
+  @@index([tableSessionId])
+  @@index([status])
+  @@map("payment_intent")
 }
