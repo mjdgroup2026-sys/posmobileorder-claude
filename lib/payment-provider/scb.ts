@@ -133,7 +133,9 @@ export type CreateQrInput = {
   amount: number
   /// โค้ดสั้นที่แมปกลับมาเป็น TableSession ได้ — ตัวเลข+พิมพ์ใหญ่ ไม่เกิน 20 ตัว
   ref1: string
-  ref2: string
+  /// ส่งเฉพาะเมื่อ Supporting Reference ใน Merchant Profile ตั้งเป็น "Two references"
+  /// ร้านนี้ตั้งเป็น "One reference" จึงเว้นไว้ — ส่งไปทั้งที่ธนาคารไม่ได้รอรับ เสี่ยงถูกปฏิเสธ
+  ref2?: string
 }
 
 /// สร้าง QR ผ่าน SCB แล้วคืน payload EMVCo ดิบ (เอาไป render เป็นรูปด้วย `qrcode` เองเหมือนเดิม)
@@ -170,7 +172,7 @@ export async function createQrCode(input: CreateQrInput): Promise<ScbResult<stri
         ppId: billerId,
         amount: input.amount.toFixed(2),
         ref1: input.ref1,
-        ref2: input.ref2,
+        ...(input.ref2 ? { ref2: input.ref2 } : {}),
         ref3,
       }),
       cache: "no-store",
