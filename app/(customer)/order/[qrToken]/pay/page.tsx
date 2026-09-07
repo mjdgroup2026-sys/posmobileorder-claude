@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { getCustomerPaymentStatus, getStoreSettings } from "@/lib/queries"
-import { isPromptPayConfigured } from "@/lib/promptpay"
+import { isQrPaymentAvailable } from "@/lib/payment-methods"
 import { CustomerShell, CustomerNotice } from "@/components/customer/customer-shell"
 import { PayView } from "@/components/customer/pay-view"
 
@@ -46,7 +46,7 @@ export default async function PayPage({ params }: PageProps<"/order/[qrToken]/pa
           serviceCharge: status.serviceCharge,
           total: status.total,
         }}
-        promptPayReady={isPromptPayConfigured()}
+        promptPayReady={isQrPaymentAvailable()}
       />
     </CustomerShell>
   )
