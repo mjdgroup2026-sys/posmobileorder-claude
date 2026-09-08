@@ -23,6 +23,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/lib-common.sh"
 
 readonly VHOST="/etc/nginx/sites-enabled/posmobileorder"
+# ห้ามเก็บไฟล์สำรองไว้ใน sites-enabled/ — nginx include ทุกไฟล์ในโฟลเดอร์นั้นโดยไม่สนนามสกุล
+# ไฟล์ .bak จึงกลายเป็น vhost ตัวที่สองของโดเมนเดียวกัน (ได้ warning "conflicting server name"
+# แล้วถูก ignore ตามลำดับตัวอักษร) และในไฟล์นั้น proxy_pass ยังชี้พอร์ตตายตัวของสี blue อยู่
+# ไม่ผ่าน upstream ที่ switch-deploy.sh เขียนทับ — วันไหนมันถูกเลือกใช้ traffic จะวิ่งไปพอร์ต
+# ที่ไม่มีคอนเทนเนอร์รันแล้วเว็บ 502 ทั้งระบบ
+readonly VHOST_BACKUP_DIR="/etc/nginx/posmobileorder-backups"
 readonly SUDOERS="/etc/sudoers.d/deploy-nginx"
 readonly DOCKER_DAEMON="/etc/docker/daemon.json"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
@@ -46,16 +52,24 @@ fi
 
 # ── 2) vhost ────────────────────────────────────────────────────────────────
 step "2/4 ให้ vhost proxy_pass ผ่าน upstream pos_app"
+# เก็บกวาดไฟล์สำรองที่สคริปต์เวอร์ชันก่อนหน้าเคยทิ้งไว้ใน sites-enabled/ เอง
+for stray in "${VHOST}".bak.*; do
+  [ -e "$stray" ] || continue
+  mkdir -p "$VHOST_BACKUP_DIR"
+  mv "$stray" "${VHOST_BACKUP_DIR}/$(basename "$stray")"
+  ok "ย้าย $(basename "$stray") ออกจาก sites-enabled/ ไปไว้ที่ ${VHOST_BACKUP_DIR}"
+done
 if [ ! -f "$VHOST" ]; then
   warn "ไม่พบ ${VHOST} — ข้ามขั้นนี้ ต้องแก้ proxy_pass เป็น http://pos_app เองภายหลัง"
 elif grep -q 'proxy_pass http://pos_app' "$VHOST"; then
   ok "ชี้ผ่าน upstream อยู่แล้ว"
 else
-  cp "$VHOST" "${VHOST}.bak.$(date +%Y%m%d%H%M%S)"
+  mkdir -p "$VHOST_BACKUP_DIR"
+  cp "$VHOST" "${VHOST_BACKUP_DIR}/posmobileorder.bak.$(date +%Y%m%d%H%M%S)"
   # แทนที่เฉพาะ proxy_pass ที่ชี้ 127.0.0.1:<port> เท่านั้น ไม่แตะบรรทัดอื่น
   sed -i -E 's|proxy_pass http://127\.0\.0\.1:[0-9]+;|proxy_pass http://pos_app;|g' "$VHOST"
   if grep -q 'proxy_pass http://pos_app' "$VHOST"; then
-    ok "แก้แล้ว (สำรองไฟล์เดิมไว้เป็น .bak)"
+    ok "แก้แล้ว (สำรองไฟล์เดิมไว้ที่ ${VHOST_BACKUP_DIR})"
   else
     warn "หา proxy_pass รูปแบบที่คาดไว้ไม่เจอ — ต้องแก้เป็น http://pos_app เอง"
   fi
@@ -107,7 +121,7 @@ if nginx -t > /dev/null 2>&1; then
   nginx -s reload > /dev/null 2>&1 || systemctl reload nginx > /dev/null 2>&1 || true
   ok "nginx -t ผ่าน และ reload แล้ว"
 else
-  fail "nginx -t ไม่ผ่าน — ตรวจ config ก่อน (ไฟล์เดิมถูกสำรองไว้เป็น .bak)"
+  fail "nginx -t ไม่ผ่าน — ตรวจ config ก่อน (ไฟล์เดิมถูกสำรองไว้ใน /etc/nginx/posmobileorder-backups)"
 fi
 
 log ""
