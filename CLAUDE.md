@@ -263,6 +263,23 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   ของสีเป้าหมายเองก่อนสตาร์ตเสมอ (step 0/6)
 - **image `:latest-migrate` ต้อง build จาก stage `migrator` เท่านั้น** — stage `deps` ไม่มี `prisma/`
   ทำให้ `prisma migrate deploy` ฟ้อง "Could not find Prisma Schema" แล้ว deploy "สำเร็จ" ทั้งที่ DB ไม่มีตาราง
+- 🔥 **หน้าที่ prerender ไว้ถูกแคชข้ามรอบ deploy จนผู้ใช้เปิดเว็บไม่ขึ้น** — ค่าเริ่มต้นของ Next.js
+  ส่งหน้า static มาพร้อม `Cache-Control: s-maxage=31536000` (สั่ง shared cache ของ ISP/CDN เก็บไว้ 1 ปี)
+  แต่ทุกครั้งที่ build ใหม่ Next.js **เปลี่ยนชื่อไฟล์ chunk ทั้งชุด** และของเก่าหายไปพร้อมคอนเทนเนอร์เดิม
+  เบราว์เซอร์ที่ยังถือ HTML เก่าจึงไปขอ chunk ที่ 404 ไปแล้ว → **หน้าขาว ทั้งที่เซิร์ฟเวอร์ปกติทุกอย่าง**
+  (nginx/คอนเทนเนอร์ healthy, `/api/health` 200, ใบรับรอง TLS ไม่หมดอายุ) · อาการเด่นคือ
+  **incognito เข้าได้ แต่โปรไฟล์ปกติเข้าไม่ได้** — เจอจริง 2026-09-08 หลัง deploy ก่อนหน้า 18 ชม.
+  → กันไว้แล้วด้วย `headers()` ใน `next.config.ts` ที่บังคับ `no-cache, must-revalidate`
+  ให้ทุก response **ยกเว้น `/_next/` และ `/api/`** · ห้ามถอดออก และถ้าจะเพิ่มกฎ `headers()` ใหม่
+  ต้องกัน 2 กลุ่มนี้ไว้เสมอ — `/_next/static/` มี hash ในชื่อไฟล์จึงแคชยาวได้ปลอดภัย ส่วน
+  route handler ใต้ `/api/` ตั้ง Cache-Control เองตามความหมายของแต่ละเส้นทาง
+  (`/api/health` ตั้ง `no-store` ไม่ให้ตัวตรวจสุขภาพอ่านผลเก่า — ทับแล้วพังเงียบ)
+- 🔥 **`sites-enabled/` ของ nginx include ทุกไฟล์โดยไม่สนนามสกุล** — วางไฟล์ `.bak` ไว้ในนั้น
+  = ได้ vhost ตัวที่สองของโดเมนเดียวกัน nginx ขึ้น warning `conflicting server name` แล้วเลือกใช้
+  ไฟล์แรกตามลำดับตัวอักษร · อันตรายเพราะไฟล์สำรองนั้น `proxy_pass` ชี้พอร์ตตายตัวของสี blue
+  ไม่ผ่าน `upstream pos_app` ที่ `switch-deploy.sh` เขียนทับ วันไหนมันถูกเลือกใช้ traffic จะวิ่งไป
+  พอร์ตที่ไม่มีคอนเทนเนอร์รัน → **502 ทั้งเว็บ** · แก้แล้วที่ `ops/setup-zero-downtime.sh`
+  ให้เก็บไฟล์สำรองไว้ที่ `/etc/nginx/posmobileorder-backups/` แทน พร้อมขั้นเก็บกวาดของเก่า
 
 ## สถานะการพัฒนา
 
