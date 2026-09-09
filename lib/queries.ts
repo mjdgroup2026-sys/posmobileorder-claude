@@ -4,7 +4,7 @@ import { toNumber } from "@/lib/format"
 import { businessDayRange, businessDateOnly } from "@/lib/day"
 import { computeBillTotals } from "@/lib/close-session"
 import type { PaymentMethodValue } from "@/lib/types"
-import type { PermissionAction as PermissionActionValue, ResourceKey } from "@/generated/prisma/client"
+import type { PermissionAction as PermissionActionValue, Prisma, ResourceKey } from "@/generated/prisma/client"
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -674,7 +674,76 @@ export async function listNotifications(limit = 60): Promise<NotificationCard[]>
 }
 
 export async function getPendingNotificationCount() {
-  return prisma.notification.count({ where: { status: "PENDING" } })
+  const [notifications, awaitingCallback] = await Promise.all([
+    prisma.notification.count({ where: { status: "PENDING" } }),
+    countPaymentsAwaitingCallback(),
+  ])
+  // รวมเข้า badge เดียวกัน — ถ้าไม่รวม พนักงานจะไม่มีวันรู้ว่ามีเรื่องต้องดู จนกว่าจะบังเอิญเปิดหน้านี้
+  return notifications + awaitingCallback
+}
+
+/// เวลาที่ยอมให้ callback ของธนาคารมาช้าได้ ก่อนจะเตือนพนักงานให้ไปตรวจเอง
+///
+/// ปกติ callback มาถึงในไม่กี่วินาที (วัดจริง 2026-09-09 ได้ 514 มิลลิวินาที) เกิน 3 นาที
+/// จึงถือว่าผิดปกติแล้ว
+const CALLBACK_GRACE_MS = 3 * 60 * 1000
+
+/// เงื่อนไข "ออก QR ไปแล้วแต่ยังไม่มี callback กลับมา"
+///
+/// สถานะยัง PENDING แปลว่าไม่มีอะไรมาปิดใบนี้เลย — callback ที่ปิดบิลสำเร็จจะเปลี่ยนเป็น PAID
+/// ส่วนเคสยอดไม่ตรง/ปิดบิลไม่ได้จะเป็น FAILED พร้อม Notification ของตัวเองอยู่แล้ว จึงไม่ซ้ำกัน
+/// · ใบที่ลูกค้าสั่งเพิ่มจนต้องออก QR ใหม่จะถูกปิดเป็น EXPIRED ก็ไม่เข้าเงื่อนไขนี้เช่นกัน
+function awaitingCallbackWhere(): Prisma.PaymentIntentWhereInput {
+  return {
+    status: "PENDING",
+    createdAt: { lte: new Date(Date.now() - CALLBACK_GRACE_MS) },
+    session: { status: { in: ["OPEN", "AWAITING_BILL"] } },
+  }
+}
+
+export type PaymentAwaitingCallback = {
+  intentId: string
+  /// เลขอ้างอิงที่ส่งไปกับ QR — พนักงานใช้ตัวนี้ค้นรายการในแอปธนาคารได้โดยตรง
+  ref1: string
+  tableId: string
+  tableCode: string
+  amount: number
+  issuedAt: Date
+}
+
+/// โต๊ะที่ออก QR ให้ลูกค้าไปแล้วเกิน 3 นาที แต่ธนาคารยังไม่ยิง callback กลับมา
+///
+/// **ไม่ใช่ Notification ในฐานข้อมูล แต่คำนวณสดทุกครั้งที่เปิดหน้า** — ตั้งใจให้เป็นแบบนี้เพราะ
+/// เงื่อนไขนี้หายเองได้ (callback มาถึงทีหลัง / พนักงานปิดบิลมือ / โต๊ะถูกยกเลิก) ถ้าเขียนเป็นแถว
+/// ในตารางจะต้องมีคนคอยตามลบ แล้วสุดท้ายพนักงานจะเห็นใบค้างที่แก้ไปแล้วเต็มหน้าจอ
+///
+/// ⚠️ **แค่เตือน ห้ามปิดบิลและห้ามยิงถามธนาคาร** — ตามการตัดสินใจ 2026-09-09 ว่าเงินเข้าต้อง
+/// ยืนยันด้วย callback ของธนาคารเท่านั้น คนที่ตัดสินใจว่าเงินเข้าจริงหรือไม่คือพนักงาน
+export async function listPaymentsAwaitingCallback(): Promise<PaymentAwaitingCallback[]> {
+  const rows = await prisma.paymentIntent.findMany({
+    where: awaitingCallbackWhere(),
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      ref1: true,
+      amount: true,
+      createdAt: true,
+      session: { select: { table: { select: { id: true, code: true } } } },
+    },
+  })
+
+  return rows.map((row) => ({
+    intentId: row.id,
+    ref1: row.ref1,
+    tableId: row.session.table.id,
+    tableCode: row.session.table.code,
+    amount: toNumber(row.amount),
+    issuedAt: row.createdAt,
+  }))
+}
+
+export async function countPaymentsAwaitingCallback(): Promise<number> {
+  return prisma.paymentIntent.count({ where: awaitingCallbackWhere() })
 }
 
 export type OrderItemRow = {
