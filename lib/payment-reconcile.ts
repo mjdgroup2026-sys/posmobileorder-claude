@@ -1,26 +1,22 @@
 import "server-only"
 import { prisma } from "@/lib/prisma"
 import { closeSessionWithPayment } from "@/lib/close-session"
-import {
-  claimBankPollSlot,
-  findPendingIntentBySession,
-  markIntentFailed,
-  markIntentPaid,
-  type IntentLookup,
-} from "@/lib/payment-intent"
-import { inquireBillPayment, isScbConfigured } from "@/lib/payment-provider/scb"
+import { markIntentFailed, markIntentPaid, type IntentLookup } from "@/lib/payment-intent"
+import { inquireBillPayment } from "@/lib/payment-provider/scb"
 
-/// ตรวจกับธนาคารแล้วปิดบิล — แกนกลางที่ **ทั้ง callback ของ SCB และการโพลของลูกค้าใช้ร่วมกัน**
+/// ตรวจกับธนาคารแล้วปิดบิล — เรียกจาก callback ของ SCB เท่านั้น
 ///
-/// ทำไมต้องมีเส้นทางโพลทั้งที่มี callback อยู่แล้ว: SCB ส่ง payment confirmation ให้เฉพาะเมื่อ URL
-/// ถูกลงทะเบียนในพอร์ทัลไว้กับคู่ (Biller ID, ref3 prefix) ที่ถูกต้อง — ตั้งผิด ไม่ได้ตั้ง หรืออยู่บน
-/// sandbox ก็เงียบสนิทโดยไม่มีสัญญาณใด ๆ · ตรวจจริงเมื่อ 2026-09-09: ลูกค้าจ่ายสำเร็จ แต่ route
-/// ของ callback ไม่มีคำขอเข้ามาเลยสักครั้งใน 23 ชั่วโมง · เส้นทางโพลจึงเป็นตัวที่ทำให้บิลปิดเองได้จริง
-/// ส่วน callback กลายเป็นทางลัดที่เร็วกว่าเมื่อธนาคารยิงมาให้
+/// ⚠️ **callback คือทางเดียวที่ปิดบิลอัตโนมัติได้** (ตัดสินใจไว้ 2026-09-09 หลัง SCB แก้ปลายทาง
+/// ให้แล้ว) · เคยมีเส้นทาง "โพลถามธนาคารเอง" ที่ปิดบิลได้โดยไม่ต้องรอ callback แล้วถอดออก —
+/// เจ้าของระบบเลือกให้เงินเข้าถูกยืนยันด้วย callback ของธนาคารเท่านั้น ไม่ให้แอปตัดสินใจเอง
 ///
-/// ⚠️ ทั้งสองทางต้องผ่านด่านเดียวกันเป๊ะ ๆ ห้ามแยกโค้ดกัน มิฉะนั้นทางใดทางหนึ่งจะปิดบิลด้วย
-/// เงื่อนไขที่หลวมกว่าอีกทางโดยไม่มีใครรู้ — ด่านทั้งสามคือ ①ธนาคารยืนยันว่ารายการมีจริง
-/// ②ยอดตรงกับที่ล็อกไว้ตอนออก QR ③ยอดยังพอกับบิลปัจจุบัน (ตรวจใน closeSessionWithPayment)
+/// ผลที่ตามมาที่ต้องยอมรับ: **callback หายเมื่อไหร่ บิลค้างทันทีทุกใบ** และต้องให้พนักงานปิดมือ
+/// ที่ `/mobile-order/tables/[tableId]/billing` · เคยเกิดจริงมาแล้ว 2026-09-08 ถึง 09-09
+/// (จ่ายสำเร็จหลายรอบ ไม่มีบิลปิดสักใบ เพราะปลายทางในพอร์ทัล SCB ยังตั้งไม่ถูก) —
+/// ถ้าอาการนั้นกลับมา ให้ดู log `[scb-webhook]` ก่อนเสมอว่าธนาคารยิงมาถึงหรือไม่
+///
+/// ด่านตรวจ 3 ชั้นที่ห้ามข้าม: ①ธนาคารยืนยันว่ารายการมีจริง ②ยอดตรงกับที่ล็อกไว้ตอนออก QR
+/// ③ยอดยังพอกับบิลปัจจุบัน (ตรวจใน closeSessionWithPayment ผ่าน verifiedAmount)
 
 export type SettleResult =
   | { ok: true; saleNumber: string; transactionId: string }
@@ -30,24 +26,10 @@ function log(message: string, detail?: Record<string, unknown>) {
   console.info(`[scb-settle] ${message}`, detail ? JSON.stringify(detail) : "")
 }
 
-function bangkokDate(at: Date): string {
-  return at.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" })
-}
-
-/// วันที่ที่ต้องถามธนาคาร — inquiry ถามได้ทีละวัน และรายการอยู่ในวันที่ "เงินเข้า" ตามเวลาไทย
-///
-/// ปกติคือวันนี้ แต่ถ้า QR ถูกออกก่อนเที่ยงคืนแล้วลูกค้าจ่ายหลังเที่ยงคืน สองวันนี้จะคนละวัน
-/// ต้องถามทั้งคู่ ไม่งั้นบิลที่คร่อมเที่ยงคืนจะไม่มีวันปิดเอง (ร้านอาหารปิดดึกเจอแน่)
-function datesToInquire(intent: IntentLookup): string[] {
-  const today = bangkokDate(new Date())
-  const issued = bangkokDate(intent.createdAt)
-  return today === issued ? [today] : [today, issued]
-}
-
 /// ยกเคสให้พนักงานตัดสิน แล้วหยุดพยายามปิดบิลเอง
 ///
 /// สร้าง Notification เฉพาะ "ครั้งที่ปิดใบได้จริง" เท่านั้น — เคสเดียวกันถูกตรวจเจอซ้ำได้หลายรอบ
-/// (ธนาคาร retry callback 3 ครั้ง + ลูกค้าโพลทุก 10 วินาที) ถ้าแจ้งทุกรอบพนักงานจะได้ใบซ้ำเป็นสิบ
+/// เพราะธนาคาร retry callback 3 ครั้ง ห่างกัน 12 วินาที ถ้าแจ้งทุกรอบพนักงานจะได้ใบซ้ำสามใบ
 async function handOffToStaff(intent: IntentLookup, reason: string): Promise<void> {
   if (!(await markIntentFailed(intent.id))) return
   await prisma.notification.create({
@@ -58,25 +40,14 @@ async function handOffToStaff(intent: IntentLookup, reason: string): Promise<voi
 /// ถามธนาคาร → เทียบยอด → ปิดบิล · ใช้กับ intent ที่รู้แล้วว่าเป็นของโต๊ะไหน
 export async function verifyAndSettleIntent(
   intent: IntentLookup,
-  transactionDates: string[],
+  transactionDate: string,
 ): Promise<SettleResult> {
-  // ★ ด่านที่ 1 — ถามธนาคารว่ารายการนี้เกิดขึ้นจริงไหม ห้ามเชื่อสิ่งที่ยิงเข้ามา
-  let verified: Awaited<ReturnType<typeof inquireBillPayment>> | null = null
-  let lastError = "ธนาคารไม่พบรายการชำระเงินที่ตรงกับเลขอ้างอิงนี้"
-
-  for (const transactionDate of transactionDates) {
-    const result = await inquireBillPayment({ transactionDate, ref1: intent.ref1 })
-    if (result.ok) {
-      verified = result
-      break
-    }
-    lastError = result.error
-  }
-
-  if (!verified?.ok) {
-    // ยังไม่ mark FAILED — ส่วนใหญ่แปลว่า "ลูกค้ายังไม่ได้จ่าย" ซึ่งเป็นเรื่องปกติของทุกรอบโพล
-    // ก่อนเงินเข้า · ถ้าไปปิดใบทิ้งตรงนี้ พอเงินเข้าจริงจะไม่มีใบให้จับคู่อีกเลย
-    return { ok: false, reason: lastError }
+  // ★ ด่านที่ 1 — ถามธนาคารว่ารายการนี้เกิดขึ้นจริงไหม ห้ามเชื่อ payload ที่ยิงเข้ามา
+  //   (callback ของ SCB ไม่มีลายเซ็นหรือ credential ใด ๆ ใครเดา URL ถูกก็ยิงปลอมได้)
+  const verified = await inquireBillPayment({ transactionDate, ref1: intent.ref1 })
+  if (!verified.ok) {
+    // ยังไม่ mark FAILED — อาจเป็นแค่ธนาคารตอบช้า/เน็ตสะดุด ปล่อยให้ retry รอบหน้าลองใหม่ได้
+    return { ok: false, reason: verified.error }
   }
 
   const bank = verified.data
@@ -124,28 +95,4 @@ export async function verifyAndSettleIntent(
   })
 
   return { ok: true, saleNumber: closed.saleNumber, transactionId: bank.transactionId }
-}
-
-/// ถามธนาคารแทน callback ที่ไม่มา — เรียกจาก `/api/order/[qrToken]/payment` ทุกรอบโพลของลูกค้า
-///
-/// คืน `null` เมื่อ "ยังไม่ถึงคิวถาม" (ไม่ได้ต่อธนาคาร / ไม่มีใบที่รอเงิน / ยังไม่ครบรอบหน่วง)
-/// ผู้เรียกไม่ต้องแยกกรณีเหล่านี้ — ทุกกรณีแปลว่า "ยังไม่มีอะไรเปลี่ยน ตอบสถานะเดิมไปได้เลย"
-export async function reconcileSessionPayment(sessionId: string): Promise<SettleResult | null> {
-  if (!isScbConfigured()) return null
-
-  const intent = await findPendingIntentBySession(sessionId)
-  if (!intent) return null
-
-  // ตั้งใจไม่เช็ค `expiresAt` — ใบหมดอายุแล้วแต่ยังเป็น PENDING แปลว่าเงินก้อนนั้นยังอาจเข้ามาทีหลัง
-  // (ลูกค้าเปิดแอปธนาคารค้างไว้แล้วเพิ่งกดจ่าย) เงินที่โอนมาแล้วไม่หายไปตามอายุ QR ของเรา
-  if (!(await claimBankPollSlot(intent.id))) return null
-
-  const result = await verifyAndSettleIntent(intent, datesToInquire(intent))
-
-  // รอบที่ยังไม่เจอเงินเป็นเรื่องปกติของทุกครั้งก่อนลูกค้าจ่าย — ไม่ต้อง log ให้รก
-  if (!result.ok && result.reason !== "ธนาคารไม่พบรายการชำระเงินที่ตรงกับเลขอ้างอิงนี้") {
-    log("โพลแล้วยังปิดบิลไม่ได้", { ref1: intent.ref1, reason: result.reason })
-  }
-
-  return result
 }

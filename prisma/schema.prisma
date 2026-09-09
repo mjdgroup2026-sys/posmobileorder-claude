@@ -634,9 +634,6 @@ model PaymentIntent {
   transactionId  String?             @unique
   expiresAt      DateTime
   paidAt         DateTime?
-  /// ครั้งล่าสุดที่เราถามธนาคารเองว่าเงินเข้าหรือยัง (เส้นทางโพล ไม่ใช่ callback ของธนาคาร)
-  /// ใช้หน่วงไม่ให้หน้ารอชำระเงินที่โพลทุก 4 วินาทียิง inquiry ทุกรอบจนเปลืองโควตาธนาคาร
-  lastPolledAt   DateTime?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 

@@ -280,7 +280,7 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   ไม่ผ่าน `upstream pos_app` ที่ `switch-deploy.sh` เขียนทับ วันไหนมันถูกเลือกใช้ traffic จะวิ่งไป
   พอร์ตที่ไม่มีคอนเทนเนอร์รัน → **502 ทั้งเว็บ** · แก้แล้วที่ `ops/setup-zero-downtime.sh`
   ให้เก็บไฟล์สำรองไว้ที่ `/etc/nginx/posmobileorder-backups/` แทน พร้อมขั้นเก็บกวาดของเก่า
-- 🔥 **SCB ไม่เคยยิง payment confirmation มาเลย — ห้ามออกแบบให้ callback เป็นทางเดียวที่ปิดบิลได้**
+- 🔥 **SCB ไม่ยิง payment confirmation มาเลย 2 วันเต็ม โดยไม่มีสัญญาณผิดพลาดใด ๆ ให้จับ**
   เจอจริง 2026-09-08 และ 2026-09-09: ลูกค้าจ่ายผ่าน QR สำเร็จ ยืนยันกับธนาคารด้วย `inquiry` ได้ครบทุกรายการ
   แต่ **บิลไม่ปิดสักใบ** · หลังใส่ log ครอบทุกด่านของ route แล้วดู `docker logs` ย้อนหลัง 23 ชั่วโมง
   พบว่ามีคำขอเข้า `/api/payments/webhook/scb/[secret]` แค่ 4 ครั้ง และเป็น `curl` ที่เรายิงทดสอบเองทั้งหมด
@@ -289,11 +289,19 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   → สาเหตุอยู่ฝั่งการลงทะเบียนที่พอร์ทัล SCB ซึ่ง**เราตรวจจากในโค้ดไม่ได้เลย**: ปลายทางถูกผูกเป็นคู่
   (Biller ID, ref3 prefix) ตั้งไม่ตรงกับ `SCB_REF3_PREFIX` ที่แอปส่ง = เงียบสนิท · sandbox ก็ไม่ส่งให้
   · และถ้าลงทะเบียนเป็น `http://` จะโดน nginx ตอบ 301 ซึ่งธนาคารไม่ตาม redirect
-  → **ทางแก้ที่ใช้จริงคือ `lib/payment-reconcile.ts`** — ให้แอปถาม `inquireBillPayment` เองทุกรอบที่ลูกค้า
-  โพลหน้ารอชำระเงิน แล้วปิดบิลเมื่อเจอเงิน · callback กลายเป็นแค่ทางลัดที่เร็วกว่าเมื่อธนาคารยิงมาจริง
-  · ทั้งสองทาง **ต้องเรียก `verifyAndSettleIntent()` ตัวเดียวกัน** ห้ามแยกด่านตรวจเป็นสองชุด
-  · การถามธนาคารถูกหน่วงด้วย `claimBankPollSlot()` (conditional update บน `PaymentIntent.lastPolledAt`)
-  เพราะ `/api/order/[qrToken]/payment` เป็น endpoint สาธารณะ ปล่อยให้ยิงทุกรอบ = คนนอกถล่มโควตาธนาคารได้
+  → **จบแล้วด้วยการติดต่อ SCB ให้แก้ปลายทางในพอร์ทัล** (2026-09-09 เย็น) — พอแก้เสร็จ callback
+  เข้ามาทันทีและปิดบิลได้ใน 514 มิลลิวินาที (`INV-000008`) · payload ผ่าน schema ตั้งแต่ครั้งแรก
+  ไม่ต้องแก้ `scbPaymentConfirmationSchema` เลย
+  · **วิธีแยกว่าเป็นธนาคารจริงหรือ curl ทดสอบของเรา** ดูที่ log บรรทัด "มีคำขอเข้ามา":
+  ธนาคารส่ง `userAgent: "-"` และ `contentLength` ~570 (payload เต็มมี `payerName`/`payerAccountNumber`)
+  ส่วน curl ของเราจะเป็น `curl/8.x` และไม่กี่สิบไบต์
+  · ⚠️ **ระหว่างนั้นเคยทำเส้นทางโพล (ให้แอปถาม `inquireBillPayment` เองแล้วปิดบิล) ขึ้น production
+  ไปแล้วและใช้งานได้จริง แต่ถอดออกตามการตัดสินใจของเจ้าของระบบ** ว่าเงินเข้าต้องยืนยันด้วย callback
+  ของธนาคารเท่านั้น (commit ที่ถอดออกอธิบายเหตุผลไว้) — **แปลว่าถ้าอาการนี้กลับมา บิลจะค้างทุกใบ
+  ทันทีและต้องปิดมือ** ไม่มีตาข่ายรองรับแล้ว · ถ้าจะรื้อกลับมา โค้ดเดิมอยู่ใน git history และ
+  `verifyAndSettleIntent()` ยังรับงานส่วนนั้นได้เลย แต่ต้องคุยกับเจ้าของระบบก่อน
+  · สิ่งแรกที่ต้องดูเสมอเวลาบิลไม่ปิดคือ `docker logs <app> | grep scb-webhook` — ตอบให้ได้ก่อนว่า
+  "ธนาคารยิงมาถึงไหม" แล้วค่อยไล่ด่านถัดไป
 
 ## สถานะการพัฒนา
 
@@ -316,10 +324,21 @@ export async function doThing(formData: FormData): Promise<ActionResult> {
   ไดรเวอร์ ESC/POS เดิมที่ `lib/kitchen-printer.ts` ยังใช้ได้ทันทีที่ตั้ง `KITCHEN_PRINTER_HOST`
 - **สมาชิกสะสมแต้ม**: ฟอร์มสมัครด้วยเบอร์โทรบนหน้า `pay/success` (เฉพาะร้านที่เปิด `crmEnabled`)
   1 แต้ม/25 บาท (`lib/points.ts`) · ให้แต้มครั้งเดียวต่อบิลด้วย unique `MemberPointTransaction.saleId`
-- **ชำระเงิน MJD Mobile Order**: `POST /api/payments/webhook` (idempotent ด้วย `Sale.paymentReference`
-  ที่ unique) + `lib/close-session.ts` ที่ทั้ง webhook และพนักงานกดยืนยันใช้ร่วมกัน · payload พร้อมเพย์
-  สร้างเองที่ `lib/promptpay.ts` (env `PROMPTPAY_ID`) · เปิดเส้นทางอัตโนมัติด้วย `PAYMENT_WEBHOOK_SECRET`
-  (ไม่ตั้ง = endpoint ตอบ 503 แต่ปิดบิลด้วยมือได้ตามปกติ) · **ยังไม่ได้ต่อ provider จริง**
+- **ชำระเงิน MJD Mobile Order — ✅ ต่อ SCB จริงแล้วและใช้งานได้ (พิสูจน์ด้วยเงินจริง 2026-09-09)**:
+  ลูกค้าสแกน QR ที่ธนาคารออกให้ → จ่าย → SCB ยิง payment confirmation กลับมา → บิลปิดเอง
+  วัดจริงได้ **514 มิลลิวินาที** ตั้งแต่ callback มาถึงจนบิลปิด (`INV-000008`) · ตัวเชื่อมอยู่ที่
+  `lib/payment-provider/scb.ts` · ปลายทาง callback คือ `/api/payments/webhook/scb/[secret]`
+  (env `SCB_WEBHOOK_SECRET`) · ด่านตรวจ 3 ชั้นรวมไว้ที่ `verifyAndSettleIntent()` ใน
+  `lib/payment-reconcile.ts` แล้วปิดบิลผ่าน `lib/close-session.ts` ตัวเดียวกับที่พนักงานกดยืนยันใช้
+  · idempotent ด้วย `Sale.paymentReference` ที่ unique
+  · ⚠️ **callback เป็นทางเดียวที่ปิดบิลอัตโนมัติได้** (ตัดสินใจ 2026-09-09) — เคยมีเส้นทางโพล
+  ถามธนาคารเองที่ปิดบิลได้โดยไม่ต้องรอ callback แล้วถอดออก **ยอมรับความเสี่ยงว่า callback หาย
+  เมื่อไหร่ = บิลค้างทุกใบ ต้องปิดมือ** (ดูกับดักหัวข้อก่อนหน้า) · `/api/order/[qrToken]/payment`
+  จึงรายงานสถานะอย่างเดียว ห้ามยิงหาธนาคาร — มีเทสล็อกไว้ที่
+  `__tests__/integration/payment-status-readonly.test.ts`
+  · `POST /api/payments/webhook` (env `PAYMENT_WEBHOOK_SECRET`) เป็นปลายทางกลางของ provider อื่น
+  ยังอยู่และยังไม่ได้ต่อกับใคร · `lib/promptpay.ts` (env `PROMPTPAY_ID`) เป็น fallback ให้ร้าน
+  ที่รับพร้อมเพย์ส่วนตัวแล้วให้พนักงานกดยืนยันเอง (เลือกด้วย `isScbConfigured()`)
 - **POS หน้าร้าน**: หน้า `/pos` (ค้นหา/บาร์โค้ด + ตะกร้า + ส่วนลด + ชำระเงิน CASH/TRANSFER/QR + ใบเสร็จพิมพ์ได้),
   `/pos/history` (กรองวันที่/สถานะ + void พร้อมเหตุผล), `/pos/closing` (ปิดยอดวันละครั้ง/คน + ส่วนต่างเงินสด),
   `/categories` (หมวดหมู่เป็น master data — `Product.categoryId` เป็น FK แล้ว ไม่ใช่ข้อความอิสระ)

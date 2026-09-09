@@ -69,72 +69,23 @@ export async function issuePaymentIntent(sessionId: string, amount: number): Pro
 
 export type IntentLookup = {
   id: string
-  /// ต้องพกกลับออกไปด้วยเสมอ — เส้นทางโพลถาม inquiry เองจึงต้องรู้ ref1 ทั้งที่ไม่ได้เริ่มจาก callback
+  /// ต้องพกกลับออกไปด้วย — `verifyAndSettleIntent()` ใช้ถาม inquiry ยืนยันกับธนาคารอีกชั้น
+  /// ก่อนปิดบิล จึงเชื่อ ref1 ที่มากับ callback ตรง ๆ ไม่ได้
   ref1: string
   tableSessionId: string
   amount: number
   status: string
   expiresAt: Date
-  createdAt: Date
 }
-
-const INTENT_FIELDS = {
-  id: true,
-  ref1: true,
-  tableSessionId: true,
-  amount: true,
-  status: true,
-  expiresAt: true,
-  createdAt: true,
-} as const
 
 /// หา intent จาก ref1 ที่ธนาคารส่งกลับมาใน callback
 export async function findIntentByRef1(ref1: string): Promise<IntentLookup | null> {
   const found = await prisma.paymentIntent.findUnique({
     where: { ref1 },
-    select: INTENT_FIELDS,
+    select: { id: true, ref1: true, tableSessionId: true, amount: true, status: true, expiresAt: true },
   })
   if (!found) return null
   return { ...found, amount: toNumber(found.amount) }
-}
-
-/// ใบที่ยังรอเงินอยู่ของโต๊ะนี้ — ใช้โดยเส้นทางโพลที่ไม่มี ref1 จากธนาคารให้เริ่มต้น
-///
-/// เอาใบล่าสุดใบเดียว: `issuePaymentIntent()` ปิดใบเก่าเป็น EXPIRED ทุกครั้งที่ยอดเปลี่ยน
-/// จึงมีใบ PENDING ได้ทีละใบต่อโต๊ะอยู่แล้ว — `findFirst` เรียงตามใหม่สุดกันเคสข้อมูลเพี้ยน
-export async function findPendingIntentBySession(sessionId: string): Promise<IntentLookup | null> {
-  const found = await prisma.paymentIntent.findFirst({
-    where: { tableSessionId: sessionId, status: "PENDING" },
-    orderBy: { createdAt: "desc" },
-    select: INTENT_FIELDS,
-  })
-  if (!found) return null
-  return { ...found, amount: toNumber(found.amount) }
-}
-
-/// ช่วงห่างขั้นต่ำระหว่างการถามธนาคารของ intent หนึ่งใบ
-///
-/// หน้ารอชำระเงินโพลทุก 4 วินาที และ `/api/order/[qrToken]/payment` เป็น endpoint สาธารณะ
-/// ที่ไม่ต้องล็อกอิน ถ้าปล่อยให้ทุกรอบยิง inquiry นอกจากเปลืองโควตาธนาคารแล้ว ยังเปิดช่องให้
-/// คนนอกยิงถล่มจนโควตาหมดแล้วบิลของลูกค้าจริงปิดไม่ได้
-const BANK_POLL_INTERVAL_MS = 10_000
-
-/// จองสิทธิ์ถามธนาคารรอบถัดไปของ intent ใบนี้ — คืน true เฉพาะผู้ที่จองได้
-///
-/// ใช้ `updateMany` + เงื่อนไขเวลาใน `where` ไม่ใช่อ่านมาเทียบแล้วค่อยเขียน (กติกาข้อ 4/7):
-/// โต๊ะหนึ่งเปิดหน้าจ่ายเงินพร้อมกันได้หลายเครื่อง ถ้าใช้ read-then-write ทุกเครื่องจะผ่านด่าน
-/// พร้อมกันในรอบเดียวแล้วยิงธนาคารซ้ำซ้อนเท่าจำนวนเครื่อง
-export async function claimBankPollSlot(intentId: string): Promise<boolean> {
-  const threshold = new Date(Date.now() - BANK_POLL_INTERVAL_MS)
-  const claimed = await prisma.paymentIntent.updateMany({
-    where: {
-      id: intentId,
-      status: "PENDING",
-      OR: [{ lastPolledAt: null }, { lastPolledAt: { lt: threshold } }],
-    },
-    data: { lastPolledAt: new Date() },
-  })
-  return claimed.count > 0
 }
 
 /// ปิด intent เป็นจ่ายแล้ว — เขียน transactionId ไว้กัน callback ซ้ำอีกชั้นนอกจาก Sale.paymentReference
@@ -149,8 +100,8 @@ export async function markIntentPaid(intentId: string, transactionId: string): P
 /// ห้ามปิดบิลเอง ต้องให้พนักงานตรวจ — เงินอาจเข้าจริงแต่ไม่ครบ
 ///
 /// คืน true เฉพาะ "ครั้งที่เปลี่ยนสถานะได้จริง" — ผู้เรียกใช้ค่านี้เป็นตัวกันแจ้งเตือนซ้ำ
-/// เพราะเคสเดียวกันถูกตรวจเจอได้หลายรอบ (ธนาคาร retry callback 3 ครั้ง + ลูกค้าโพลทุก 10 วินาที)
-/// ถ้าสร้าง Notification ทุกรอบ พนักงานจะได้แจ้งเตือนเรื่องเดียวกันเป็นสิบใบ
+/// เพราะเคสเดียวกันถูกตรวจเจอได้หลายรอบ: ธนาคาร retry callback 3 ครั้ง ห่างกัน 12 วินาที
+/// ถ้าสร้าง Notification ทุกรอบ พนักงานจะได้แจ้งเตือนเรื่องเดียวกันสามใบ
 export async function markIntentFailed(intentId: string): Promise<boolean> {
   const failed = await prisma.paymentIntent.updateMany({
     where: { id: intentId, status: "PENDING" },

@@ -114,9 +114,9 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/pay
     return failureResponse("ไม่พบรายการที่ตรงกับเลขอ้างอิงนี้")
   }
 
-  // ★ ด่านตรวจทั้งหมด (ถามธนาคาร → เทียบยอด → ปิดบิล) อยู่ใน `verifyAndSettleIntent` ซึ่งใช้
-  //   ร่วมกับเส้นทางโพลของลูกค้า — ห้ามตรวจซ้ำเองตรงนี้ ไม่งั้นสองทางจะค่อย ๆ เพี้ยนออกจากกัน
-  const outcome = await verifyAndSettleIntent(intent, [toBangkokDate(transactionDateandTime)])
+  // ★ ด่านตรวจทั้งหมด (ถามธนาคาร → เทียบยอด → ปิดบิล) อยู่ใน `verifyAndSettleIntent`
+  //   เส้นทางนี้เป็น **ทางเดียวที่ปิดบิลอัตโนมัติได้** ตามการตัดสินใจ 2026-09-09
+  const outcome = await verifyAndSettleIntent(intent, toBangkokDate(transactionDateandTime))
   if (!outcome.ok) {
     return failureResponse(outcome.reason)
   }

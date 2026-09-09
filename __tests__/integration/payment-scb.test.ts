@@ -270,4 +270,70 @@ describe.skipIf(!dbReady)("payment confirmation ของ SCB (Phase 10)", () =>
       expect(intent.ref1).toMatch(/^[A-Z0-9]{1,20}$/)
     })
   })
+
+  describe("ด่านกันเงินขาดและกันแจ้งเตือนซ้ำ", () => {
+    it("บิลโตขึ้นหลังออก QR จนเงินที่โอนมาไม่พอ → ห้ามปิดบิล ต้องแจ้งพนักงาน", async () => {
+      const db = testPrisma()
+      const { sessionId, intent } = await seedSessionWithIntent()
+
+      // ลูกค้าอีกคนบนโต๊ะเดียวกันสั่งเพิ่ม 100 บาทระหว่างที่คนแรกกำลังจ่าย → บิลจริงกลายเป็น 360
+      // ยอดใน PaymentIntent ยังเป็น 260 อยู่ (ล็อกไว้ตอนออก QR) ด่านเทียบยอดชั้นแรกจึงผ่าน
+      const extra = await createTestMenuItem({ name: "ข้าวผัดปู", price: "100.00" })
+      const order2 = await createTestOrder(sessionId, 2)
+      await createTestOrderItem(order2.id, extra.id, { quantity: 1, unitPrice: "100.00" })
+
+      inquireMock.mockResolvedValue({
+        ok: true,
+        data: { transactionId: "SCBTX-GREW", amount: 260, billPaymentRef1: intent.ref1 },
+      })
+
+      const response = await callWebhook(WEBHOOK_SECRET, {
+        transactionId: "SCBTX-GREW",
+        billPaymentRef1: intent.ref1,
+        amount: "260.00",
+        transactionDateandTime: "2026-09-09T12:30:00.000+07:00",
+      })
+      expect((await response.json()).resCode).toBe("99")
+
+      // ปิดบิลตรงนี้คือร้านขาดเงิน 100 บาทโดยไม่มีใครรู้
+      expect(await db.sale.findFirst({ where: { tableSessionId: sessionId } })).toBeNull()
+      expect((await db.tableSession.findUnique({ where: { id: sessionId } }))?.status).not.toBe("CLOSED")
+      expect((await db.paymentIntent.findUnique({ where: { id: intent.id } }))?.status).toBe("FAILED")
+
+      const notification = await db.notification.findFirst({
+        where: { tableSessionId: sessionId, type: "CHECK_BILL" },
+      })
+      expect(notification?.reason).toContain("ได้รับเงิน 260.00 บาทแล้ว")
+      expect(notification?.reason).toContain("SCBTX-GREW")
+    })
+
+    it("ธนาคาร retry callback ที่ยอดไม่ตรง 3 ครั้ง → แจ้งพนักงานใบเดียว ไม่ใช่สามใบ", async () => {
+      const db = testPrisma()
+      const { sessionId, intent } = await seedSessionWithIntent()
+
+      // ลูกค้าแก้จำนวนเงินในแอปธนาคารเป็น 200 ทั้งที่บิล 260
+      inquireMock.mockResolvedValue({
+        ok: true,
+        data: { transactionId: "SCBTX-RETRY", amount: 200, billPaymentRef1: intent.ref1 },
+      })
+
+      const payload = {
+        transactionId: "SCBTX-RETRY",
+        billPaymentRef1: intent.ref1,
+        amount: "260.00",
+        transactionDateandTime: "2026-09-09T12:30:00.000+07:00",
+      }
+
+      // SCB ยิงซ้ำ 3 ครั้ง ห่างกัน 12 วินาที เมื่อได้ resCode ที่ไม่ใช่ 00
+      await callWebhook(WEBHOOK_SECRET, payload)
+      await callWebhook(WEBHOOK_SECRET, payload)
+      await callWebhook(WEBHOOK_SECRET, payload)
+
+      const notifications = await db.notification.findMany({
+        where: { tableSessionId: sessionId, type: "CHECK_BILL" },
+      })
+      expect(notifications).toHaveLength(1)
+      expect(notifications[0]?.reason).toContain("ยอดชำระไม่ตรงกับบิล")
+    })
+  })
 })
