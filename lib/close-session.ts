@@ -20,6 +20,13 @@ export type ClosePaymentInput = {
   cashierId?: string
   paymentReference?: string
   amountReceived?: number
+  /// ยอดที่ **ธนาคารยืนยันว่าได้รับจริง** — ตั้งเฉพาะเส้นทางที่ปิดบิลจากเงินที่โอนเข้ามาแล้ว
+  /// (callback ของ SCB และการโพลถามธนาคาร) ถ้าบิลปัจจุบันแพงกว่ายอดนี้ให้ยกเลิกทั้งทรานแซคชัน
+  ///
+  /// จำเป็นเพราะยอดถูกล็อกไว้ตอนออก QR แต่บิลยังโตต่อได้: ลูกค้าอีกคนบนโต๊ะเดียวกันสั่งเพิ่ม
+  /// ระหว่างที่คนแรกกำลังจ่ายอยู่ · เทียบแค่กับ `PaymentIntent.amount` ไม่พอ เพราะนั่นคือยอดเก่า
+  /// ต้องเทียบกับยอดที่คำนวณสดในทรานแซคชันนี้จึงจะกันเงินขาดได้จริง
+  verifiedAmount?: number
   note?: string
 }
 
@@ -147,6 +154,15 @@ export async function closeSessionWithPayment(input: ClosePaymentInput): Promise
 
       if (input.paymentMethod === "CASH" && received < total) {
         throw new CloseAbort(`เงินที่รับไม่พอ — ต้องชำระ ${total.toFixed(2)} บาท`)
+      }
+
+      // ★ เงินโอนเข้ามาแล้วแต่ไม่พอกับบิลที่โตขึ้นระหว่างทาง — ห้ามปิดบิลเอง ต้องให้พนักงานตรวจ
+      //   ตรวจตรงนี้เพราะเป็นจุดเดียวที่ `total` ถูกคำนวณสดอยู่ในทรานแซคชันเดียวกับการปิดบิล
+      if (input.verifiedAmount !== undefined && round2(input.verifiedAmount) < total) {
+        throw new CloseAbort(
+          `เงินที่ได้รับ ${round2(input.verifiedAmount).toFixed(2)} บาท น้อยกว่ายอดบิลปัจจุบัน ` +
+            `${total.toFixed(2)} บาท (มีรายการสั่งเพิ่มหลังออก QR)`,
+        )
       }
 
       const cashierId = input.cashierId ?? (await ensureSystemUser(tx))

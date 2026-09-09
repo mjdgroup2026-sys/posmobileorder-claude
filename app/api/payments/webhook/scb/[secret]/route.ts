@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { timingSafeEqual } from "node:crypto"
 import { prisma } from "@/lib/prisma"
-import { closeSessionWithPayment } from "@/lib/close-session"
-import { findIntentByRef1, markIntentFailed, markIntentPaid } from "@/lib/payment-intent"
-import { confirmationResponse, inquireBillPayment } from "@/lib/payment-provider/scb"
+import { findIntentByRef1 } from "@/lib/payment-intent"
+import { verifyAndSettleIntent } from "@/lib/payment-reconcile"
+import { confirmationResponse } from "@/lib/payment-provider/scb"
 import { scbPaymentConfirmationSchema } from "@/lib/validation"
 
 /// ปลายทาง payment confirmation ของ SCB (Phase 10)
@@ -114,47 +114,12 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/pay
     return failureResponse("ไม่พบรายการที่ตรงกับเลขอ้างอิงนี้")
   }
 
-  // ★ ด่านจริง — ถามธนาคารว่ารายการนี้เกิดขึ้นจริงไหม ห้ามเชื่อ payload ที่ยิงเข้ามา
-  const verified = await inquireBillPayment({
-    transactionDate: toBangkokDate(transactionDateandTime),
-    ref1: billPaymentRef1,
-  })
-  if (!verified.ok) {
-    // ยังไม่ mark FAILED — อาจเป็นแค่ธนาคารตอบช้า/เน็ตสะดุด ปล่อยให้ retry รอบหน้าลองใหม่ได้
-    return failureResponse(verified.error)
+  // ★ ด่านตรวจทั้งหมด (ถามธนาคาร → เทียบยอด → ปิดบิล) อยู่ใน `verifyAndSettleIntent` ซึ่งใช้
+  //   ร่วมกับเส้นทางโพลของลูกค้า — ห้ามตรวจซ้ำเองตรงนี้ ไม่งั้นสองทางจะค่อย ๆ เพี้ยนออกจากกัน
+  const outcome = await verifyAndSettleIntent(intent, [toBangkokDate(transactionDateandTime)])
+  if (!outcome.ok) {
+    return failureResponse(outcome.reason)
   }
 
-  // ★ เทียบยอด — ลูกค้าแก้จำนวนเงินในแอปธนาคารได้ ปิดบิลทั้งที่ได้เงินไม่ครบไม่ได้
-  //   เทียบกับยอดที่ธนาคารยืนยัน ไม่ใช่ยอดใน payload ที่ยิงเข้ามา (ปลอมได้)
-  if (verified.data.amount !== intent.amount) {
-    log("ยอดไม่ตรง", { bankAmount: verified.data.amount, billAmount: intent.amount })
-    await markIntentFailed(intent.id)
-    await prisma.notification.create({
-      data: {
-        tableSessionId: intent.tableSessionId,
-        type: "CHECK_BILL",
-        reason:
-          `ยอดชำระไม่ตรงกับบิล — ธนาคารยืนยัน ${verified.data.amount.toFixed(2)} บาท ` +
-          `แต่บิลคือ ${intent.amount.toFixed(2)} บาท กรุณาตรวจสอบก่อนปิดโต๊ะ`,
-      },
-    })
-    return failureResponse("ยอดชำระไม่ตรงกับบิล ส่งให้พนักงานตรวจสอบแล้ว")
-  }
-
-  const result = await closeSessionWithPayment({
-    sessionId: intent.tableSessionId,
-    paymentMethod: "PROMPTPAY",
-    paymentReference: transactionId,
-    amountReceived: verified.data.amount,
-  })
-
-  if (!result.ok) {
-    return failureResponse(result.error)
-  }
-
-  await markIntentPaid(intent.id, transactionId)
-
-  log("ปิดบิลสำเร็จ", { saleNumber: result.saleNumber, transactionId, amount: verified.data.amount })
-
-  return NextResponse.json(confirmationResponse(transactionId, result.saleNumber))
+  return NextResponse.json(confirmationResponse(outcome.transactionId, outcome.saleNumber))
 }
