@@ -12,7 +12,7 @@ import { formatBaht, formatClock, formatDateTime, formatNumber } from "@/lib/for
 import type { CustomerPaidBill, NotificationCard, PaymentAwaitingCallback } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
-import { CustomerPaidNotice } from "@/components/customer-paid-notice"
+import { CustomerPaidBadge } from "@/components/customer-paid-notice"
 import { IconBell, IconReceipt, IconSpinner, IconWarning } from "@/components/icons"
 
 export function NotificationBoard({
@@ -29,6 +29,12 @@ export function NotificationBoard({
 
   const waiting = notifications.filter((n) => n.status === "PENDING")
   const done = notifications.filter((n) => n.status === "ACKNOWLEDGED")
+
+  // ป้าย "จ่ายแล้ว" ต้องไปอยู่ในการ์ดของโต๊ะที่แจ้งมา ไม่ใช่กรอบใหม่แยกต่างหาก
+  const paidByTable = new Map<string, CustomerPaidBill>()
+  for (const bill of paidBills) {
+    if (bill.tableId && !paidByTable.has(bill.tableId)) paidByTable.set(bill.tableId, bill)
+  }
 
   async function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     setPending(true)
@@ -75,6 +81,9 @@ export function NotificationBoard({
         </div>
 
         {item.reason ? <p className="t-small">{item.reason}</p> : null}
+
+        {/* โต๊ะที่แจ้งมาแล้วลูกค้าจ่ายเองเรียบร้อย — ต้องเห็นในการ์ดใบเดียวกับที่แจ้ง ไม่ใช่กรอบใหม่ */}
+        {paidByTable.has(item.tableId) ? <CustomerPaidBadge bill={paidByTable.get(item.tableId)!} /> : null}
 
         {/* 2 จุดเวลาที่ F12 บังคับให้แสดงเสมอ: เวลาที่เปิดโต๊ะ และเปิดมาแล้วกี่นาที */}
         <span className="t-caption">
@@ -137,9 +146,6 @@ export function NotificationBoard({
           </button>
         ) : null}
       </div>
-
-      {/* ข่าวดีขึ้นก่อนเสมอ — พนักงานจะได้ไม่ต้องไล่หาว่าโต๊ะที่หายไปจ่ายเรียบร้อยแล้วหรือยัง */}
-      <CustomerPaidNotice bills={paidBills} />
 
       {awaitingCallback.length > 0 ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>

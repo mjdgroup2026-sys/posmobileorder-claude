@@ -89,9 +89,13 @@ export async function findIntentByRef1(ref1: string): Promise<IntentLookup | nul
 }
 
 /// ปิด intent เป็นจ่ายแล้ว — เขียน transactionId ไว้กัน callback ซ้ำอีกชั้นนอกจาก Sale.paymentReference
+///
+/// รับใบที่ EXPIRED ไปแล้วด้วย เพราะ **ใบหมดอายุฝั่งเราไม่ได้แปลว่าจ่ายไม่ได้แล้วจริง ๆ** —
+/// QR ที่ค้างอยู่ในแอปธนาคารของลูกค้ายังจ่ายได้ และเงินก็เข้าจริง (ธนาคารยืนยันแล้วถึงจะมาถึงบรรทัดนี้)
+/// ถ้าไม่รับ ใบนั้นจะค้างเป็น EXPIRED ทั้งที่มีเงินเข้า แล้วไล่ที่มาของเงินย้อนหลังไม่ได้
 export async function markIntentPaid(intentId: string, transactionId: string): Promise<void> {
   await prisma.paymentIntent.updateMany({
-    where: { id: intentId, status: "PENDING" },
+    where: { id: intentId, status: { in: ["PENDING", "EXPIRED"] } },
     data: { status: "PAID", transactionId, paidAt: new Date() },
   })
 }

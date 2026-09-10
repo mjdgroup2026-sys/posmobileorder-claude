@@ -16,7 +16,7 @@ import type { CustomerPaidBill, TableCard } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
 import { IconBell, IconMerge, IconReceipt, IconSpinner, IconTable } from "@/components/icons"
-import { CustomerPaidNotice } from "@/components/customer-paid-notice"
+import { CustomerPaidBadge } from "@/components/customer-paid-notice"
 import {
   Dialog,
   DialogContent,
@@ -95,6 +95,15 @@ export function TableOverview({
 
   const visible = tables.filter((t) => matchesFilter(t, filter))
   const emptyTables = tables.filter((t) => t.status === "EMPTY")
+
+  // จับคู่บิลที่เพิ่งชำระเข้ากับการ์ดของโต๊ะนั้น — ป้ายต้องอยู่ในกรอบเดิมของโต๊ะ ไม่ใช่กรอบใหม่
+  const paidByTable = useMemo(() => {
+    const map = new Map<string, CustomerPaidBill>()
+    for (const bill of paidBills) {
+      if (bill.tableId && !map.has(bill.tableId)) map.set(bill.tableId, bill)
+    }
+    return map
+  }, [paidBills])
 
   async function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     setPending(true)
@@ -177,9 +186,6 @@ export function TableOverview({
         </Link>
       </div>
 
-      {/* โต๊ะที่ลูกค้าจ่ายเองแล้วระบบปิดบิลให้ — ไม่งั้นพนักงานเห็นแค่โต๊ะกลับเป็นว่างเฉย ๆ */}
-      <CustomerPaidNotice bills={paidBills} />
-
       {tables.length === 0 ? (
         <div className="alert-banner warning">
           ยังไม่มีโต๊ะในระบบ — ไปที่ <Link href="/mobile-order/tables/manage">จัดการโต๊ะ</Link> เพื่อเพิ่มโต๊ะก่อน
@@ -231,6 +237,9 @@ export function TableOverview({
                   <LiveElapsed since={table.openedAt} />
                 </span>
               ) : null}
+
+              {/* บิลที่ลูกค้าจ่ายเองแล้วระบบปิดให้ — อยู่ในกรอบของโต๊ะที่จ่าย ไม่แยกไปกรอบใหม่ */}
+              {paidByTable.has(table.id) ? <CustomerPaidBadge bill={paidByTable.get(table.id)!} /> : null}
 
               {table.primaryTableCode ? (
                 <span className="t-caption">

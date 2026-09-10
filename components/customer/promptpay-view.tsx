@@ -26,14 +26,18 @@ export function PromptPayView({
   imageDataUrl: string
 }) {
   const [remaining, setRemaining] = useState(EXPIRE_SECONDS)
-  const paid = usePaymentPoll(qrToken, remaining > 0)
+  const expiredClock = remaining === 0
+
+  // ★ ยังโพลต่อหลังนาฬิกาหมด (แค่ช้าลง) — QR ที่ค้างอยู่ในแอปธนาคารของลูกค้ายังจ่ายได้จริง
+  //   ถ้าหยุดโพล ลูกค้าที่จ่ายสำเร็จหลังนาฬิกาหมดจะไม่มีวันได้เห็นใบเสร็จ ทั้งที่บิลปิดไปแล้ว
+  const paid = usePaymentPoll(qrToken, true, expiredClock ? 8000 : 4000)
 
   useEffect(() => {
     const timer = setInterval(() => setRemaining((value) => (value > 0 ? value - 1 : 0)), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  const expired = remaining === 0 && !paid
+  const expired = expiredClock && !paid
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -68,11 +72,18 @@ export function PromptPayView({
 
       {expired ? (
         <>
-          <div className="alert-banner warning">
-            QR หมดอายุแล้ว กรุณากดสร้างใหม่ หรือแจ้งพนักงานเพื่อชำระที่เคาน์เตอร์
+          {/* ต้องบอกให้ชัดว่า "จ่ายไปแล้วไม่ต้องจ่ายซ้ำ" — ถ้าเขียนแค่ว่าหมดอายุ ลูกค้าที่เพิ่งสแกน
+              จ่ายไปจะเข้าใจว่าเงินไม่เข้า แล้วกดสร้าง QR ใหม่จ่ายซ้ำอีกรอบ */}
+          <div className="alert-banner info">
+            QR บนหน้าจอหมดอายุแล้ว · <strong>ถ้าคุณสแกนจ่ายไปแล้ว ไม่ต้องจ่ายซ้ำ</strong> ระบบยังรอ
+            การยืนยันจากธนาคารอยู่ และจะแสดงใบเสร็จให้ทันทีที่ยืนยันแล้ว
           </div>
+          <p className="row t-small" style={{ justifyContent: "center", gap: 8 }}>
+            <IconSpinner size={16} className="animate-spin" aria-hidden />
+            กำลังตรวจสอบการชำระเงินอยู่
+          </p>
           <Link href={`/order/${qrToken}/pay`} className="btn btn-primary btn-lg btn-block">
-            สร้าง QR ใหม่
+            ยังไม่ได้จ่าย · สร้าง QR ใหม่
           </Link>
         </>
       ) : (

@@ -1,83 +1,34 @@
-import { formatBaht, formatClock, formatNumber } from "@/lib/format"
-import { LiveElapsed } from "@/components/live-elapsed"
+import { formatBaht, formatClock } from "@/lib/format"
 import { IconCheck } from "@/components/icons"
 import { PAYMENT_METHOD_LABEL } from "@/lib/types"
 import type { CustomerPaidBill } from "@/lib/queries"
 
-/// ป้ายบอกพนักงานว่า "ลูกค้าจ่ายเองเรียบร้อยแล้วเมื่อกี่โมง" — ใช้ทั้งบนผังโต๊ะและหน้าแจ้งเตือน
+/// ป้าย "ลูกค้าชำระเงินแล้วเมื่อกี่โมง" ที่วางไว้ **ในการ์ดของโต๊ะนั้นเอง**
 ///
 /// จำเป็นเพราะ callback ของธนาคารปิดบิลแล้วคืนโต๊ะเป็นว่างในทรานแซคชันเดียวกัน พนักงานที่เฝ้าจอ
-/// จึงเห็นแค่โต๊ะหายไปเฉย ๆ · ป้ายนี้คำนวณสดและหายเองเมื่อพ้นช่วงเวลาที่กำหนด ไม่ต้องกดรับทราบ
+/// จึงเห็นแค่โต๊ะกลับเป็นว่างเฉย ๆ ไม่มีอะไรบอกว่าลูกค้าจ่ายครบแล้วหรือแค่ลุกไป
 ///
-/// จัดเป็น **การ์ดใบละโต๊ะ** ทรงเดียวกับการ์ด "รอธนาคารยืนยัน" ที่อยู่หน้าเดียวกัน — ข้อมูลของโต๊ะไหน
-/// ต้องอยู่ในกรอบเดียวกันให้ครบ ไม่ใช่แถบยาวบรรทัดเดียวที่พอตัดคำแล้วอ่านไม่ออกว่าเวลาเป็นของโต๊ะไหน
-export function CustomerPaidNotice({ bills }: { bills: CustomerPaidBill[] }) {
-  if (bills.length === 0) return null
-
+/// ⚠️ **ห้ามแยกไปเป็นกรอบ/section ของตัวเอง** — เคยทำแบบนั้นแล้วพนักงานงงหนักกว่าเดิม เพราะต้อง
+/// เอาเลขโต๊ะในกรอบใหม่ไปไล่จับคู่กับการ์ดโต๊ะอีกที · ข้อมูลของโต๊ะไหนต้องอยู่ในกรอบของโต๊ะนั้น
+/// ทรงเดียวกับแถบ "เรียกพนักงาน/ขอเช็กบิล" ที่อยู่ในการ์ดโต๊ะอยู่แล้ว
+export function CustomerPaidBadge({ bill }: { bill: CustomerPaidBill }) {
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <h2 className="t-h3" style={{ color: "var(--success)" }}>
-        ลูกค้าชำระเงินแล้วเรียบร้อย · <span className="num">{formatNumber(bills.length)}</span> โต๊ะ
-      </h2>
+    <div className="alert-banner success" style={{ padding: "8px 10px", flexDirection: "column", gap: 4 }}>
+      <span className="row" style={{ gap: 6 }}>
+        <IconCheck size={15} aria-hidden />
+        <span className="t-small" style={{ fontWeight: 700 }}>
+          ลูกค้าชำระเงินแล้วเรียบร้อย
+        </span>
+      </span>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
-        {bills.map((bill) => (
-          <article
-            key={bill.saleId}
-            className="card-ui card-pad"
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              // ย้อมทั้งใบเป็นสีเขียว + แถบข้างหนา ๆ ให้เห็นแต่ไกลว่า "โต๊ะนี้จ่ายแล้ว"
-              // ใช้ token เท่านั้น (ห้าม hex ดิบ) จะได้ถูกต้องทั้งธีม staff และ customer
-              background: "var(--success-bg)",
-              borderColor: "color-mix(in srgb, var(--success) 35%, transparent)",
-              borderLeft: "5px solid var(--success)",
-            }}
-          >
-            <div className="row" style={{ justifyContent: "space-between", gap: 10 }}>
-              <span className="row" style={{ gap: 8 }}>
-                <IconCheck size={19} aria-hidden style={{ color: "var(--success)" }} />
-                <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>โต๊ะ {bill.tableCode}</span>
-              </span>
-              {/* พื้นการ์ดเป็นสีเขียวอ่อนแล้ว chip แบบปกติจะจมหายไป — กลับสีให้เป็นเขียวทึบแทน */}
-              <span
-                className="chip"
-                style={{ background: "var(--success)", color: "var(--surface)", fontWeight: 700 }}
-              >
-                <span className="dot" />
-                ชำระเงินแล้ว
-              </span>
-            </div>
+      {/* เวลาที่เงินเข้าจริง — ตัวหลักที่พนักงานถามหา */}
+      <span className="t-small">
+        เมื่อเวลา <strong className="num">{formatClock(bill.paidAt)}</strong> น. · ฿
+        <span className="num">{formatBaht(bill.total)}</span> · {PAYMENT_METHOD_LABEL[bill.paymentMethod]}
+      </span>
 
-            {/* หัวใจของการ์ดใบนี้ — เวลาที่เงินเข้าจริง ต้องอ่านง่ายที่สุดในกรอบ */}
-            <span className="t-body" style={{ color: "var(--success)" }}>
-              ชำระเงินเรียบร้อยเมื่อเวลา{" "}
-              <strong className="num" style={{ fontSize: "1.15rem" }}>
-                {formatClock(bill.paidAt)}
-              </strong>{" "}
-              น.
-            </span>
-
-            <span className="t-caption">
-              <LiveElapsed since={bill.paidAt} prefix="ผ่านมาแล้ว " />
-            </span>
-
-            {/* เลขบิลไว้ให้พนักงานค้นในประวัติการขายเวลาลูกค้าขอใบเสร็จย้อนหลัง */}
-            <span className="t-caption">
-              บิล <span className="num">{bill.saleNumber}</span> · {PAYMENT_METHOD_LABEL[bill.paymentMethod]}
-            </span>
-
-            <span className="row" style={{ justifyContent: "space-between" }}>
-              <span className="t-small">ยอดที่ชำระ</span>
-              <span className="t-small num" style={{ fontWeight: 600 }}>
-                ฿{formatBaht(bill.total)}
-              </span>
-            </span>
-          </article>
-        ))}
-      </div>
-    </section>
+      {/* เลขบิลไว้ให้พนักงานค้นในประวัติการขายเวลาลูกค้าขอใบเสร็จย้อนหลัง */}
+      <span className="t-caption num">บิล {bill.saleNumber}</span>
+    </div>
   )
 }

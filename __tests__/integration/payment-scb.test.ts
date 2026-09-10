@@ -269,6 +269,52 @@ describe.skipIf(!dbReady)("payment confirmation ของ SCB (Phase 10)", () =>
       const { intent } = await seedSessionWithIntent()
       expect(intent.ref1).toMatch(/^[A-Z0-9]{1,20}$/)
     })
+
+    /// เจอจริง 2026-09-10: ลูกค้าจ่ายหลัง QR บนจอหมดอายุ เงินเข้าจริง แต่จอลูกค้าไม่ขึ้นใบเสร็จ
+    ///
+    /// "หมดอายุ" ของเราไม่ได้ทำให้ QR ในแอปธนาคารจ่ายไม่ได้ — เมื่อธนาคารยืนยันว่าเงินเข้าและยอดตรง
+    /// ต้องปิดบิลให้ตามปกติ แล้วสถานะฝั่งลูกค้าต้องกลายเป็น PAID เพื่อให้หน้าเว็บพาไปหน้าใบเสร็จ
+    it("QR หมดอายุฝั่งเราแล้วลูกค้ายังจ่ายได้ → ต้องปิดบิลและออกใบเสร็จให้ลูกค้าตามปกติ", async () => {
+      const db = testPrisma()
+      const { table, sessionId, intent } = await seedSessionWithIntent()
+
+      // จำลองใบที่หมดอายุไปแล้ว (ลูกค้ากดสร้าง QR ใหม่ หรือใบเก่าพ้น TTL)
+      await db.paymentIntent.update({
+        where: { id: intent.id },
+        data: { status: "EXPIRED", expiresAt: new Date(Date.now() - 60_000) },
+      })
+
+      inquireMock.mockResolvedValue({
+        ok: true,
+        data: { transactionId: "SCBTX-LATE-QR", amount: 260, billPaymentRef1: intent.ref1 },
+      })
+
+      const response = await callWebhook(WEBHOOK_SECRET, {
+        transactionId: "SCBTX-LATE-QR",
+        billPaymentRef1: intent.ref1,
+        amount: "260.00",
+        transactionDateandTime: "2026-09-10T12:30:00.000+07:00",
+      })
+      expect((await response.json()).resCode).toBe("00")
+
+      const sale = await db.sale.findFirst({ where: { tableSessionId: sessionId } })
+      expect(sale?.paymentReference).toBe("SCBTX-LATE-QR")
+
+      // ใบที่หมดอายุต้องถูกบันทึกว่าจ่ายแล้ว ไม่ใช่ค้าง EXPIRED ทั้งที่มีเงินเข้า
+      const reloaded = await db.paymentIntent.findUnique({ where: { id: intent.id } })
+      expect(reloaded?.status).toBe("PAID")
+      expect(reloaded?.transactionId).toBe("SCBTX-LATE-QR")
+
+      // ★ หัวใจของเคสนี้ — หน้าลูกค้าโพลผ่าน getCustomerPaymentStatus ต้องได้ PAID พร้อมเลขบิล
+      const qr = await db.qRCode.findFirst({ where: { tableId: table.id } })
+      const queries = await import("@/lib/queries")
+      const status = await queries.getCustomerPaymentStatus(qr?.token ?? "")
+      expect(status.state).toBe("PAID")
+      if (status.state === "PAID") {
+        expect(status.saleNumber).toBe(sale?.saleNumber)
+        expect(status.total).toBe(260)
+      }
+    })
   })
 
   describe("ด่านกันเงินขาดและกันแจ้งเตือนซ้ำ", () => {
