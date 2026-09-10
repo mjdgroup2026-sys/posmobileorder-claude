@@ -12,11 +12,11 @@ import {
 } from "@/app/actions/tables"
 import { acknowledgeNotification } from "@/app/actions/notifications"
 import { formatBaht, formatClock, formatNumber } from "@/lib/format"
-import type { CustomerPaidBill, TableCard } from "@/lib/queries"
+import type { CustomerPaidBill, PaymentAwaitingCallback, TableCard } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
 import { IconBell, IconMerge, IconReceipt, IconSpinner, IconTable } from "@/components/icons"
-import { CustomerPaidBadge } from "@/components/customer-paid-notice"
+import { AwaitingCallbackBadge, CustomerPaidBadge } from "@/components/payment-alerts"
 import {
   Dialog,
   DialogContent,
@@ -70,9 +70,11 @@ function matchesFilter(table: TableCard, filter: Filter): boolean {
 export function TableOverview({
   tables,
   paidBills = [],
+  awaitingCallback = [],
 }: {
   tables: TableCard[]
   paidBills?: CustomerPaidBill[]
+  awaitingCallback?: PaymentAwaitingCallback[]
 }) {
   const router = useRouter()
   const [filter, setFilter] = useState<Filter>("all")
@@ -104,6 +106,15 @@ export function TableOverview({
     }
     return map
   }, [paidBills])
+
+  // เช่นเดียวกับใบที่รอธนาคารยืนยัน — ขึ้นในกรอบของโต๊ะที่ออก QR ไว้
+  const awaitingByTable = useMemo(() => {
+    const map = new Map<string, PaymentAwaitingCallback>()
+    for (const item of awaitingCallback) {
+      if (!map.has(item.tableId)) map.set(item.tableId, item)
+    }
+    return map
+  }, [awaitingCallback])
 
   async function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     setPending(true)
@@ -240,6 +251,11 @@ export function TableOverview({
 
               {/* บิลที่ลูกค้าจ่ายเองแล้วระบบปิดให้ — อยู่ในกรอบของโต๊ะที่จ่าย ไม่แยกไปกรอบใหม่ */}
               {paidByTable.has(table.id) ? <CustomerPaidBadge bill={paidByTable.get(table.id)!} /> : null}
+
+              {/* ออก QR ไปแล้วแต่ธนาคารยังไม่ยืนยัน — อยู่ในกรอบเดียวกันเช่นกัน */}
+              {awaitingByTable.has(table.id) ? (
+                <AwaitingCallbackBadge item={awaitingByTable.get(table.id)!} />
+              ) : null}
 
               {table.primaryTableCode ? (
                 <span className="t-caption">

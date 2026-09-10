@@ -12,7 +12,7 @@ import { formatBaht, formatClock, formatDateTime, formatNumber } from "@/lib/for
 import type { CustomerPaidBill, NotificationCard, PaymentAwaitingCallback } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
-import { CustomerPaidBadge } from "@/components/customer-paid-notice"
+import { AwaitingCallbackBadge, CustomerPaidBadge } from "@/components/payment-alerts"
 import { IconBell, IconReceipt, IconSpinner, IconWarning } from "@/components/icons"
 
 export function NotificationBoard({
@@ -30,11 +30,19 @@ export function NotificationBoard({
   const waiting = notifications.filter((n) => n.status === "PENDING")
   const done = notifications.filter((n) => n.status === "ACKNOWLEDGED")
 
-  // ป้าย "จ่ายแล้ว" ต้องไปอยู่ในการ์ดของโต๊ะที่แจ้งมา ไม่ใช่กรอบใหม่แยกต่างหาก
+  // ป้าย "จ่ายแล้ว" และ "รอธนาคารยืนยัน" ต้องไปอยู่ในการ์ดของโต๊ะที่แจ้งมา ไม่ใช่กรอบใหม่แยกต่างหาก
   const paidByTable = new Map<string, CustomerPaidBill>()
   for (const bill of paidBills) {
     if (bill.tableId && !paidByTable.has(bill.tableId)) paidByTable.set(bill.tableId, bill)
   }
+
+  const awaitingByTable = new Map<string, PaymentAwaitingCallback>()
+  for (const item of awaitingCallback) {
+    if (!awaitingByTable.has(item.tableId)) awaitingByTable.set(item.tableId, item)
+  }
+
+  const notifiedTables = new Set(notifications.map((n) => n.tableId))
+  const orphanAwaiting = awaitingCallback.filter((item) => !notifiedTables.has(item.tableId))
 
   async function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     setPending(true)
@@ -84,6 +92,11 @@ export function NotificationBoard({
 
         {/* โต๊ะที่แจ้งมาแล้วลูกค้าจ่ายเองเรียบร้อย — ต้องเห็นในการ์ดใบเดียวกับที่แจ้ง ไม่ใช่กรอบใหม่ */}
         {paidByTable.has(item.tableId) ? <CustomerPaidBadge bill={paidByTable.get(item.tableId)!} /> : null}
+
+        {/* เช่นเดียวกับใบที่ออก QR ไปแล้วธนาคารยังไม่ยืนยัน */}
+        {awaitingByTable.has(item.tableId) ? (
+          <AwaitingCallbackBadge item={awaitingByTable.get(item.tableId)!} />
+        ) : null}
 
         {/* 2 จุดเวลาที่ F12 บังคับให้แสดงเสมอ: เวลาที่เปิดโต๊ะ และเปิดมาแล้วกี่นาที */}
         <span className="t-caption">
@@ -147,20 +160,18 @@ export function NotificationBoard({
         ) : null}
       </div>
 
-      {awaitingCallback.length > 0 ? (
+      {/* ★ โต๊ะที่รอธนาคารยืนยันแต่ **ไม่มีการ์ดแจ้งเตือนของตัวเอง** ให้ไปเกาะ
+          (เช่น พนักงานลบ/ไม่มีใบ CHECK_BILL) — ที่เหลือขึ้นในการ์ดของโต๊ะนั้นแทน
+          ห้ามตัดทิ้งเฉย ๆ เพราะรายการนี้ถูกนับรวมใน badge ของ sidebar ถ้าไม่แสดงที่ไหนเลย
+          พนักงานจะเห็นตัวเลขค้างแล้วหาที่มาไม่เจอ */}
+      {orphanAwaiting.length > 0 ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="t-h3" style={{ color: "var(--warning)" }}>
-            รอธนาคารยืนยันนานผิดปกติ · <span className="num">{formatNumber(awaitingCallback.length)}</span>
+            รอธนาคารยืนยันนานผิดปกติ · <span className="num">{formatNumber(orphanAwaiting.length)}</span>
           </h2>
 
-          <div className="alert-banner warning">
-            โต๊ะเหล่านี้ออก QR ให้ลูกค้าไปแล้วเกิน 5 นาที แต่ธนาคารยังไม่ยืนยันว่าเงินเข้า ·
-            อาจเป็นเพราะลูกค้ายังไม่ได้จ่าย (ไม่ต้องทำอะไร) หรือเงินเข้าแล้วแต่ธนาคารไม่แจ้งกลับมา ·
-            <strong> กรุณาตรวจกับแอปธนาคารก่อนปิดบิล</strong> ระบบจะไม่ปิดบิลให้เองในกรณีนี้
-          </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
-            {awaitingCallback.map((item) => (
+            {orphanAwaiting.map((item) => (
               <article
                 key={item.intentId}
                 className="card-ui card-pad"
@@ -169,7 +180,7 @@ export function NotificationBoard({
                 <div className="row" style={{ justifyContent: "space-between", gap: 10 }}>
                   <span className="row" style={{ gap: 8 }}>
                     <IconWarning size={17} aria-hidden />
-                    <span style={{ fontWeight: 700 }}>โต๊ะ {item.tableCode} · รอธนาคารยืนยัน</span>
+                    <span style={{ fontWeight: 700 }}>โต๊ะ {item.tableCode}</span>
                   </span>
                   <span className="chip chip-warning">
                     <span className="dot" />
@@ -177,22 +188,7 @@ export function NotificationBoard({
                   </span>
                 </div>
 
-                <span className="t-caption">
-                  ออก QR เมื่อ <span className="num">{formatClock(item.issuedAt)}</span> ·{" "}
-                  <LiveElapsed since={item.issuedAt} prefix="รอมาแล้ว " />
-                </span>
-
-                {/* ref1 คือตัวที่พนักงานเอาไปค้นรายการในแอปธนาคารได้ตรง ๆ */}
-                <span className="t-caption">
-                  เลขอ้างอิง <span className="num">{item.ref1}</span>
-                </span>
-
-                <span className="row" style={{ justifyContent: "space-between" }}>
-                  <span className="t-small">ยอดที่ออก QR</span>
-                  <span className="t-small num" style={{ fontWeight: 600 }}>
-                    ฿{formatBaht(item.amount)}
-                  </span>
-                </span>
+                <AwaitingCallbackBadge item={item} />
 
                 <Link
                   href={`/mobile-order/tables/${item.tableId}/billing`}
