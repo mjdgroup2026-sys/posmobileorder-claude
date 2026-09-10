@@ -2,7 +2,7 @@ import "server-only"
 import { prisma } from "@/lib/prisma"
 import { toNumber } from "@/lib/format"
 import { businessDayRange, businessDateOnly } from "@/lib/day"
-import { computeBillTotals } from "@/lib/close-session"
+import { computeBillTotals, SYSTEM_USER_ID } from "@/lib/close-session"
 import type { PaymentMethodValue } from "@/lib/types"
 import type { PermissionAction as PermissionActionValue, Prisma, ResourceKey } from "@/generated/prisma/client"
 
@@ -684,9 +684,12 @@ export async function getPendingNotificationCount() {
 
 /// เวลาที่ยอมให้ callback ของธนาคารมาช้าได้ ก่อนจะเตือนพนักงานให้ไปตรวจเอง
 ///
-/// ปกติ callback มาถึงในไม่กี่วินาที (วัดจริง 2026-09-09 ได้ 514 มิลลิวินาที) เกิน 3 นาที
+/// ปกติ callback มาถึงในไม่กี่วินาที (วัดจริง 2026-09-09 ได้ 514 มิลลิวินาที) เกิน 5 นาที
 /// จึงถือว่าผิดปกติแล้ว
-const CALLBACK_GRACE_MS = 3 * 60 * 1000
+///
+/// ขยับจาก 3 เป็น 5 นาทีหลังทดสอบชำระเงินรอบ 2026-09-10 — ลูกค้าใช้เวลาเปิดแอปธนาคารและยืนยัน
+/// ตัวตนเกิน 3 นาทีได้ตามปกติ พนักงานจึงเห็นใบเตือนทั้งที่ยังไม่มีอะไรผิด
+const CALLBACK_GRACE_MS = 5 * 60 * 1000
 
 /// เงื่อนไข "ออก QR ไปแล้วแต่ยังไม่มี callback กลับมา"
 ///
@@ -711,7 +714,7 @@ export type PaymentAwaitingCallback = {
   issuedAt: Date
 }
 
-/// โต๊ะที่ออก QR ให้ลูกค้าไปแล้วเกิน 3 นาที แต่ธนาคารยังไม่ยิง callback กลับมา
+/// โต๊ะที่ออก QR ให้ลูกค้าไปแล้วเกิน 5 นาที แต่ธนาคารยังไม่ยิง callback กลับมา
 ///
 /// **ไม่ใช่ Notification ในฐานข้อมูล แต่คำนวณสดทุกครั้งที่เปิดหน้า** — ตั้งใจให้เป็นแบบนี้เพราะ
 /// เงื่อนไขนี้หายเองได้ (callback มาถึงทีหลัง / พนักงานปิดบิลมือ / โต๊ะถูกยกเลิก) ถ้าเขียนเป็นแถว
@@ -744,6 +747,65 @@ export async function listPaymentsAwaitingCallback(): Promise<PaymentAwaitingCal
 
 export async function countPaymentsAwaitingCallback(): Promise<number> {
   return prisma.paymentIntent.count({ where: awaitingCallbackWhere() })
+}
+
+/// นานแค่ไหนที่ยังขึ้นป้าย "ลูกค้าชำระเงินแล้ว" ให้พนักงานเห็นบนหน้าจอ
+///
+/// ต้องนานพอให้พนักงานที่เดินไปเก็บโต๊ะอื่นกลับมาแล้วยังเห็นทัน แต่ไม่นานจนป้ายเก่าท่วมจอ
+const PAID_NOTICE_WINDOW_MS = 15 * 60 * 1000
+
+export type CustomerPaidBill = {
+  saleId: string
+  saleNumber: string
+  tableId: string | null
+  tableCode: string
+  total: number
+  paymentMethod: PaymentMethodValue
+  /// เวลาที่บิลถูกปิด = เวลาที่ธนาคารยืนยันว่าเงินเข้า (callback ปิดบิลในทรานแซคชันเดียวกัน)
+  paidAt: Date
+}
+
+/// บิลของ MJD Mobile Order ที่ **ลูกค้าจ่ายเองแล้วระบบปิดให้อัตโนมัติ** ภายใน 15 นาทีที่ผ่านมา
+///
+/// มีไว้เพราะพอ callback ของธนาคารปิดบิลสำเร็จ โต๊ะจะกลับเป็น "ว่าง" ทันที — พนักงานที่เฝ้า
+/// หน้าผังโต๊ะจึงเห็นแค่โต๊ะหายไปเฉย ๆ ไม่มีอะไรบอกว่าลูกค้าจ่ายครบแล้วหรือแค่ลุกไป
+/// ป้ายนี้ตอบให้ชัดว่า "โต๊ะไหน จ่ายเมื่อกี่โมง ยอดเท่าไร บิลเลขอะไร"
+///
+/// **คำนวณสดเหมือน `listPaymentsAwaitingCallback()`** ไม่เขียนแถวลงตาราง `Notification` —
+/// ป้ายนี้ไม่มีอะไรให้พนักงานต้องกดรับทราบ มันหายเองเมื่อพ้น 15 นาที
+///
+/// แยกบิลที่ปิดเองอัตโนมัติออกจากบิลที่พนักงานกดปิดด้วย `cashierId = SYSTEM_USER_ID` —
+/// บิลที่พนักงานกดปิดเองไม่ต้องแจ้ง เพราะคนกดคือคนที่รู้อยู่แล้ว
+export async function listCustomerPaidBills(limit = 8): Promise<CustomerPaidBill[]> {
+  const rows = await prisma.sale.findMany({
+    where: {
+      channel: "MOBILE_ORDER",
+      status: "COMPLETED",
+      cashierId: SYSTEM_USER_ID,
+      createdAt: { gte: new Date(Date.now() - PAID_NOTICE_WINDOW_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      saleNumber: true,
+      total: true,
+      paymentMethod: true,
+      createdAt: true,
+      session: { select: { table: { select: { id: true, code: true } } } },
+    },
+  })
+
+  return rows.map((row) => ({
+    saleId: row.id,
+    saleNumber: row.saleNumber,
+    tableId: row.session?.table.id ?? null,
+    // บิลของช่องทางนี้ผูกกับโต๊ะเสมอ — ที่เผื่อไว้คือกรณีข้อมูลเก่าที่ session ถูกลบทิ้ง
+    tableCode: row.session?.table.code ?? "-",
+    total: toNumber(row.total),
+    paymentMethod: row.paymentMethod as PaymentMethodValue,
+    paidAt: row.createdAt,
+  }))
 }
 
 export type OrderItemRow = {

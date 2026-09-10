@@ -12,10 +12,11 @@ import {
 } from "@/app/actions/tables"
 import { acknowledgeNotification } from "@/app/actions/notifications"
 import { formatBaht, formatClock, formatNumber } from "@/lib/format"
-import type { TableCard } from "@/lib/queries"
+import type { CustomerPaidBill, TableCard } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
 import { IconBell, IconMerge, IconReceipt, IconSpinner, IconTable } from "@/components/icons"
+import { CustomerPaidNotice } from "@/components/customer-paid-notice"
 import {
   Dialog,
   DialogContent,
@@ -66,7 +67,13 @@ function matchesFilter(table: TableCard, filter: Filter): boolean {
   }
 }
 
-export function TableOverview({ tables }: { tables: TableCard[] }) {
+export function TableOverview({
+  tables,
+  paidBills = [],
+}: {
+  tables: TableCard[]
+  paidBills?: CustomerPaidBill[]
+}) {
   const router = useRouter()
   const [filter, setFilter] = useState<Filter>("all")
   const [pending, setPending] = useState(false)
@@ -169,6 +176,9 @@ export function TableOverview({ tables }: { tables: TableCard[] }) {
           จัดการโต๊ะ
         </Link>
       </div>
+
+      {/* โต๊ะที่ลูกค้าจ่ายเองแล้วระบบปิดบิลให้ — ไม่งั้นพนักงานเห็นแค่โต๊ะกลับเป็นว่างเฉย ๆ */}
+      <CustomerPaidNotice bills={paidBills} />
 
       {tables.length === 0 ? (
         <div className="alert-banner warning">

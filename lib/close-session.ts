@@ -11,7 +11,9 @@ import type { PaymentMethodValue } from "@/lib/types"
 ///    คืนโต๊ะทั้งกลุ่มเป็นว่าง
 /// 3. idempotent ด้วย `Sale.paymentReference` (unique) — webhook ที่ยิงซ้ำต้องไม่สร้างบิลซ้ำ
 
-const SYSTEM_USER_ID = "system"
+/// ผู้ใช้ที่ถูกบันทึกเป็นแคชเชียร์ของบิลที่ระบบปิดเอง — เป็นตัวแยกเดียวที่บอกได้ว่า
+/// "ลูกค้าจ่ายเอง ระบบปิดให้" ต่างจากบิลที่พนักงานกดปิดเอง (ดู `listCustomerPaidBills()`)
+export const SYSTEM_USER_ID = "system"
 
 export type ClosePaymentInput = {
   sessionId: string

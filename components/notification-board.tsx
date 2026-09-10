@@ -9,17 +9,20 @@ import {
 } from "@/app/actions/notifications"
 import Link from "next/link"
 import { formatBaht, formatClock, formatDateTime, formatNumber } from "@/lib/format"
-import type { NotificationCard, PaymentAwaitingCallback } from "@/lib/queries"
+import type { CustomerPaidBill, NotificationCard, PaymentAwaitingCallback } from "@/lib/queries"
 import { LiveElapsed } from "@/components/live-elapsed"
 import { AutoRefresh } from "@/components/auto-refresh"
+import { CustomerPaidNotice } from "@/components/customer-paid-notice"
 import { IconBell, IconReceipt, IconSpinner, IconWarning } from "@/components/icons"
 
 export function NotificationBoard({
   notifications,
   awaitingCallback = [],
+  paidBills = [],
 }: {
   notifications: NotificationCard[]
   awaitingCallback?: PaymentAwaitingCallback[]
+  paidBills?: CustomerPaidBill[]
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -135,6 +138,9 @@ export function NotificationBoard({
         ) : null}
       </div>
 
+      {/* ข่าวดีขึ้นก่อนเสมอ — พนักงานจะได้ไม่ต้องไล่หาว่าโต๊ะที่หายไปจ่ายเรียบร้อยแล้วหรือยัง */}
+      <CustomerPaidNotice bills={paidBills} />
+
       {awaitingCallback.length > 0 ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="t-h3" style={{ color: "var(--warning)" }}>
@@ -142,7 +148,7 @@ export function NotificationBoard({
           </h2>
 
           <div className="alert-banner warning">
-            โต๊ะเหล่านี้ออก QR ให้ลูกค้าไปแล้วเกิน 3 นาที แต่ธนาคารยังไม่ยืนยันว่าเงินเข้า ·
+            โต๊ะเหล่านี้ออก QR ให้ลูกค้าไปแล้วเกิน 5 นาที แต่ธนาคารยังไม่ยืนยันว่าเงินเข้า ·
             อาจเป็นเพราะลูกค้ายังไม่ได้จ่าย (ไม่ต้องทำอะไร) หรือเงินเข้าแล้วแต่ธนาคารไม่แจ้งกลับมา ·
             <strong> กรุณาตรวจกับแอปธนาคารก่อนปิดบิล</strong> ระบบจะไม่ปิดบิลให้เองในกรณีนี้
           </div>

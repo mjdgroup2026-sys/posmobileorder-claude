@@ -23,11 +23,11 @@ vi.mock("@/lib/session", () => ({
 
 const dbReady = await isTestDbReachable()
 
-/// แจ้งเตือนพนักงานเมื่อออก QR ไปแล้วเกิน 3 นาทีแต่ธนาคารยังไม่ยืนยัน
+/// แจ้งเตือนพนักงานเมื่อออก QR ไปแล้วเกิน 5 นาทีแต่ธนาคารยังไม่ยืนยัน
 ///
 /// เป็นตาข่ายรองรับเดียวที่เหลืออยู่หลังถอดเส้นทางโพลออก (ตัดสินใจ 2026-09-09) — **เตือนอย่างเดียว
 /// ไม่ปิดบิลและไม่ยิงถามธนาคาร** คนที่ตัดสินใจว่าเงินเข้าจริงหรือไม่คือพนักงาน
-describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ callback ของธนาคารไม่มาภายใน 3 นาที", () => {
+describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ callback ของธนาคารไม่มาภายใน 5 นาที", () => {
   let openTableSession: (formData: FormData) => Promise<ActionResult<{ sessionId: string }>>
   let issuePaymentIntent: typeof import("@/lib/payment-intent").issuePaymentIntent
   let listPaymentsAwaitingCallback: typeof import("@/lib/queries").listPaymentsAwaitingCallback
@@ -70,7 +70,7 @@ describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ c
     return { table, sessionId, intent }
   }
 
-  /// ย้อนเวลาที่ออก QR ให้เก่ากว่าที่กำหนด — เร็วกว่ารอจริง 3 นาทีในเทส
+  /// ย้อนเวลาที่ออก QR ให้เก่ากว่าที่กำหนด — เร็วกว่ารอจริง 5 นาทีในเทส
   async function backdateIntent(intentId: string, minutesAgo: number) {
     await testPrisma().paymentIntent.update({
       where: { id: intentId },
@@ -78,17 +78,17 @@ describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ c
     })
   }
 
-  it("เพิ่งออก QR ยังไม่ถึง 3 นาที → ยังไม่เตือน", async () => {
+  it("เพิ่งออก QR ยังไม่ถึง 5 นาที → ยังไม่เตือน", async () => {
     const { intent } = await seedSessionWithIntent()
-    await backdateIntent(intent.id, 2)
+    await backdateIntent(intent.id, 4)
 
     expect(await listPaymentsAwaitingCallback()).toHaveLength(0)
     expect(await countPaymentsAwaitingCallback()).toBe(0)
   })
 
-  it("เกิน 3 นาทีแล้วยังไม่มี callback → เตือน พร้อมเลขอ้างอิงและยอดให้พนักงานไปตรวจ", async () => {
+  it("เกิน 5 นาทีแล้วยังไม่มี callback → เตือน พร้อมเลขอ้างอิงและยอดให้พนักงานไปตรวจ", async () => {
     const { table, intent } = await seedSessionWithIntent()
-    await backdateIntent(intent.id, 4)
+    await backdateIntent(intent.id, 6)
 
     const rows = await listPaymentsAwaitingCallback()
     expect(rows).toHaveLength(1)
@@ -145,10 +145,10 @@ describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ c
     const fresh = await issuePaymentIntent(sessionId, 390)
     expect(fresh.ref1).not.toBe(intent.ref1)
 
-    // ใบใหม่เพิ่งออก ยังไม่ถึง 3 นาที → ไม่มีอะไรต้องเตือน
+    // ใบใหม่เพิ่งออก ยังไม่ถึง 5 นาที → ไม่มีอะไรต้องเตือน
     expect(await listPaymentsAwaitingCallback()).toHaveLength(0)
 
-    await backdateIntent(fresh.id, 4)
+    await backdateIntent(fresh.id, 6)
     const rows = await listPaymentsAwaitingCallback()
     expect(rows).toHaveLength(1)
     expect(rows[0]?.ref1).toBe(fresh.ref1)
@@ -174,7 +174,7 @@ describe.skipIf(!dbReady)("เตือนพนักงานเมื่อ c
     await db.notification.create({ data: { tableSessionId: sessionId, type: "CALL_STAFF" } })
     expect(await getPendingNotificationCount()).toBe(1)
 
-    await backdateIntent(intent.id, 4)
+    await backdateIntent(intent.id, 6)
     expect(await getPendingNotificationCount()).toBe(2)
   })
 })
