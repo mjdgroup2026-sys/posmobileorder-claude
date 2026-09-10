@@ -12,15 +12,18 @@ import type { CustomerPaidBill, PaymentAwaitingCallback } from "@/lib/queries"
 
 const INSET: React.CSSProperties = { padding: "8px 10px", flexDirection: "column", gap: 4 }
 
-/// ลูกค้าจ่ายเองแล้วระบบปิดบิลให้ — โต๊ะกลับเป็นว่างในทรานแซคชันเดียวกับที่ callback ปิดบิล
+/// โต๊ะที่ปิดบิลไปแล้ว — โต๊ะกลับเป็นว่างในทรานแซคชันเดียวกับที่ปิดบิล
 /// ถ้าไม่มีแถบนี้พนักงานจะเห็นแค่โต๊ะหายไปเฉย ๆ ไม่รู้ว่าจ่ายครบแล้วหรือแค่ลุกไป
+///
+/// ขึ้นทั้งบิลที่ระบบปิดเองหลังธนาคารยืนยัน และบิลที่พนักงานกดปิดเอง — บอกให้ชัดว่าใครปิด
+/// (เคสจ่ายหลัง QR หมดอายุมักจบด้วยพนักงานกดปิดเอง ถ้ากรองออกจะไม่มีอะไรขึ้นบนจอเลย)
 export function CustomerPaidBadge({ bill }: { bill: CustomerPaidBill }) {
   return (
     <div className="alert-banner success" style={INSET}>
       <span className="row" style={{ gap: 6 }}>
         <IconCheck size={15} aria-hidden />
         <span className="t-small" style={{ fontWeight: 700 }}>
-          ลูกค้าชำระเงินแล้วเรียบร้อย
+          {bill.autoClosed ? "ลูกค้าชำระเงินแล้วเรียบร้อย" : "ปิดบิลเรียบร้อยแล้ว"}
         </span>
       </span>
 
@@ -31,7 +34,12 @@ export function CustomerPaidBadge({ bill }: { bill: CustomerPaidBill }) {
       </span>
 
       {/* เลขบิลไว้ให้พนักงานค้นในประวัติการขายเวลาลูกค้าขอใบเสร็จย้อนหลัง */}
-      <span className="t-caption num">บิล {bill.saleNumber}</span>
+      <span className="t-caption">
+        <span className="num">บิล {bill.saleNumber}</span> ·{" "}
+        {bill.autoClosed
+          ? "ระบบปิดบิลอัตโนมัติหลังธนาคารยืนยัน"
+          : `ปิดโดย ${bill.closedByName ?? "พนักงาน"}`}
+      </span>
     </div>
   )
 }

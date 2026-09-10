@@ -749,10 +749,12 @@ export async function countPaymentsAwaitingCallback(): Promise<number> {
   return prisma.paymentIntent.count({ where: awaitingCallbackWhere() })
 }
 
-/// นานแค่ไหนที่ยังขึ้นป้าย "ลูกค้าชำระเงินแล้ว" ให้พนักงานเห็นบนหน้าจอ
+/// นานแค่ไหนที่ยังขึ้นป้าย "ชำระเงินแล้ว" ให้พนักงานเห็นบนหน้าจอ
 ///
-/// ต้องนานพอให้พนักงานที่เดินไปเก็บโต๊ะอื่นกลับมาแล้วยังเห็นทัน แต่ไม่นานจนป้ายเก่าท่วมจอ
-const PAID_NOTICE_WINDOW_MS = 15 * 60 * 1000
+/// ต้องนานพอให้พนักงานที่เดินไปเก็บโต๊ะอื่นกลับมาแล้วยังเห็นทัน แต่ไม่นานจนป้ายเก่าท่วมจอ ·
+/// ขยับจาก 15 เป็น 30 นาทีเมื่อ 2026-09-10 เพราะเคสจ่ายช้า (ลูกค้าจ่ายหลัง QR หมดอายุ)
+/// กว่าพนักงานจะกลับมาดูจอก็เลย 15 นาทีไปแล้ว แล้วป้ายหายไปก่อนที่จะมีใครได้เห็น
+const PAID_NOTICE_WINDOW_MS = 30 * 60 * 1000
 
 export type CustomerPaidBill = {
   saleId: string
@@ -763,25 +765,31 @@ export type CustomerPaidBill = {
   paymentMethod: PaymentMethodValue
   /// เวลาที่บิลถูกปิด = เวลาที่ธนาคารยืนยันว่าเงินเข้า (callback ปิดบิลในทรานแซคชันเดียวกัน)
   paidAt: Date
+  /// ระบบปิดบิลให้เองหลังธนาคารยืนยัน (true) หรือพนักงานกดปิดเอง (false)
+  autoClosed: boolean
+  /// ชื่อพนักงานที่กดปิดบิล — null เมื่อระบบปิดให้เอง
+  closedByName: string | null
 }
 
-/// บิลของ MJD Mobile Order ที่ **ลูกค้าจ่ายเองแล้วระบบปิดให้อัตโนมัติ** ภายใน 15 นาทีที่ผ่านมา
+/// บิลของ MJD Mobile Order ที่ปิดไปแล้วภายใน 30 นาทีที่ผ่านมา — ทั้งที่ระบบปิดเองและพนักงานกดปิด
 ///
-/// มีไว้เพราะพอ callback ของธนาคารปิดบิลสำเร็จ โต๊ะจะกลับเป็น "ว่าง" ทันที — พนักงานที่เฝ้า
-/// หน้าผังโต๊ะจึงเห็นแค่โต๊ะหายไปเฉย ๆ ไม่มีอะไรบอกว่าลูกค้าจ่ายครบแล้วหรือแค่ลุกไป
-/// ป้ายนี้ตอบให้ชัดว่า "โต๊ะไหน จ่ายเมื่อกี่โมง ยอดเท่าไร บิลเลขอะไร"
+/// มีไว้เพราะพอบิลถูกปิด โต๊ะจะกลับเป็น "ว่าง" ทันที — พนักงานที่เฝ้าหน้าผังโต๊ะจึงเห็นแค่โต๊ะ
+/// หายไปเฉย ๆ ไม่มีอะไรบอกว่าลูกค้าจ่ายครบแล้วหรือแค่ลุกไป
+/// ป้ายนี้ตอบให้ชัดว่า "โต๊ะไหน จ่ายเมื่อกี่โมง ยอดเท่าไร บิลเลขอะไร ใครเป็นคนปิด"
 ///
 /// **คำนวณสดเหมือน `listPaymentsAwaitingCallback()`** ไม่เขียนแถวลงตาราง `Notification` —
-/// ป้ายนี้ไม่มีอะไรให้พนักงานต้องกดรับทราบ มันหายเองเมื่อพ้น 15 นาที
+/// ป้ายนี้ไม่มีอะไรให้พนักงานต้องกดรับทราบ มันหายเองเมื่อพ้นช่วงเวลา
 ///
-/// แยกบิลที่ปิดเองอัตโนมัติออกจากบิลที่พนักงานกดปิดด้วย `cashierId = SYSTEM_USER_ID` —
-/// บิลที่พนักงานกดปิดเองไม่ต้องแจ้ง เพราะคนกดคือคนที่รู้อยู่แล้ว
-export async function listCustomerPaidBills(limit = 8): Promise<CustomerPaidBill[]> {
+/// ⚠️ **เดิมกรองเฉพาะบิลที่ระบบปิดเอง (`cashierId = SYSTEM_USER_ID`) ด้วยเหตุผลว่า "บิลที่พนักงาน
+/// กดปิดเอง คนกดรู้อยู่แล้ว" — ผิด** เจ้าของระบบเจอจริง 2026-09-10 ว่าเคส QR หมดอายุแล้วลูกค้า
+/// จ่ายช้ามักจบด้วยพนักงานกดปิดเอง (เห็นเตือน "รอธนาคารยืนยัน" → เช็กแอปธนาคาร → กดปิด)
+/// จอเลยไม่ขึ้นอะไรเลยทั้งที่ลูกค้าจ่ายแล้ว · และคนที่กดปิดกับคนที่เฝ้าจอมักเป็นคนละคน
+/// จึงต้องขึ้นทุกบิล แล้วบอกให้ชัดแทนว่าใครเป็นคนปิด
+export async function listCustomerPaidBills(limit = 12): Promise<CustomerPaidBill[]> {
   const rows = await prisma.sale.findMany({
     where: {
       channel: "MOBILE_ORDER",
       status: "COMPLETED",
-      cashierId: SYSTEM_USER_ID,
       createdAt: { gte: new Date(Date.now() - PAID_NOTICE_WINDOW_MS) },
     },
     orderBy: { createdAt: "desc" },
@@ -792,20 +800,27 @@ export async function listCustomerPaidBills(limit = 8): Promise<CustomerPaidBill
       total: true,
       paymentMethod: true,
       createdAt: true,
+      cashierId: true,
+      cashier: { select: { name: true } },
       session: { select: { table: { select: { id: true, code: true } } } },
     },
   })
 
-  return rows.map((row) => ({
-    saleId: row.id,
-    saleNumber: row.saleNumber,
-    tableId: row.session?.table.id ?? null,
-    // บิลของช่องทางนี้ผูกกับโต๊ะเสมอ — ที่เผื่อไว้คือกรณีข้อมูลเก่าที่ session ถูกลบทิ้ง
-    tableCode: row.session?.table.code ?? "-",
-    total: toNumber(row.total),
-    paymentMethod: row.paymentMethod as PaymentMethodValue,
-    paidAt: row.createdAt,
-  }))
+  return rows.map((row) => {
+    const autoClosed = row.cashierId === SYSTEM_USER_ID
+    return {
+      saleId: row.id,
+      saleNumber: row.saleNumber,
+      tableId: row.session?.table.id ?? null,
+      // บิลของช่องทางนี้ผูกกับโต๊ะเสมอ — ที่เผื่อไว้คือกรณีข้อมูลเก่าที่ session ถูกลบทิ้ง
+      tableCode: row.session?.table.code ?? "-",
+      total: toNumber(row.total),
+      paymentMethod: row.paymentMethod as PaymentMethodValue,
+      paidAt: row.createdAt,
+      autoClosed,
+      closedByName: autoClosed ? null : (row.cashier?.name ?? null),
+    }
+  })
 }
 
 export type OrderItemRow = {

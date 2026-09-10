@@ -97,8 +97,10 @@ describe.skipIf(!dbReady)("แจ้งพนักงานเมื่อล�
     expect(rows[0]?.saleNumber).toBe(closed.ok === true ? closed.saleNumber : "")
   })
 
-  it("พนักงานกดปิดบิลเอง → ไม่ขึ้นป้าย เพราะคนกดรู้อยู่แล้ว", async () => {
-    const { sessionId } = await seedSessionWithBill()
+  /// เดิมกรองบิลแบบนี้ทิ้ง แล้วเจ้าของระบบเจอจริงว่าเคสจ่ายหลัง QR หมดอายุจบด้วยพนักงานกดปิดเอง
+  /// จอเลยไม่ขึ้นอะไรเลยทั้งที่ลูกค้าจ่ายแล้ว — ต้องขึ้นเหมือนกัน เพียงแต่บอกว่าใครเป็นคนปิด
+  it("พนักงานกดปิดบิลเอง → ขึ้นป้ายเหมือนกัน พร้อมบอกว่าใครปิด", async () => {
+    const { table, sessionId } = await seedSessionWithBill()
 
     const closed = await closeSessionWithPayment({
       sessionId,
@@ -108,10 +110,31 @@ describe.skipIf(!dbReady)("แจ้งพนักงานเมื่อล�
     })
     expect(closed.ok).toBe(true)
 
-    expect(await listCustomerPaidBills()).toHaveLength(0)
+    const rows = await listCustomerPaidBills()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.tableId).toBe(table.id)
+    expect(rows[0]?.autoClosed).toBe(false)
+    expect(rows[0]?.closedByName).toBe("ผู้ทดสอบ")
   })
 
-  it("ป้ายหายเองเมื่อพ้น 15 นาที ไม่ต้องมีใครมากดรับทราบ", async () => {
+  it("บิลที่ระบบปิดเองต้องไม่ถูกติดป้ายว่าพนักงานปิด", async () => {
+    const { sessionId } = await seedSessionWithBill()
+
+    const closed = await closeSessionWithPayment({
+      sessionId,
+      paymentMethod: "PROMPTPAY",
+      paymentReference: "SCBTX-AUTO-1",
+      amountReceived: 260,
+      verifiedAmount: 260,
+    })
+    expect(closed.ok).toBe(true)
+
+    const rows = await listCustomerPaidBills()
+    expect(rows[0]?.autoClosed).toBe(true)
+    expect(rows[0]?.closedByName).toBeNull()
+  })
+
+  it("ป้ายหายเองเมื่อพ้น 30 นาที ไม่ต้องมีใครมากดรับทราบ", async () => {
     const { sessionId } = await seedSessionWithBill()
 
     const closed = await closeSessionWithPayment({
@@ -124,10 +147,10 @@ describe.skipIf(!dbReady)("แจ้งพนักงานเมื่อล�
     expect(closed.ok).toBe(true)
     const saleId = closed.ok === true ? closed.saleId : ""
 
-    await backdateSale(saleId, 14)
+    await backdateSale(saleId, 29)
     expect(await listCustomerPaidBills()).toHaveLength(1)
 
-    await backdateSale(saleId, 16)
+    await backdateSale(saleId, 31)
     expect(await listCustomerPaidBills()).toHaveLength(0)
   })
 })

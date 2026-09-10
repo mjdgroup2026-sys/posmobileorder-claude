@@ -314,6 +314,12 @@ describe.skipIf(!dbReady)("payment confirmation ของ SCB (Phase 10)", () =>
         expect(status.saleNumber).toBe(sale?.saleNumber)
         expect(status.total).toBe(260)
       }
+
+      // ★ ฝั่งพนักงานต้องเห็นป้าย "ลูกค้าชำระเงินแล้ว" ในกรอบของโต๊ะนี้ด้วย — บิลที่มาจากใบ QR
+      //   ที่หมดอายุไปแล้วก็ยังเป็นบิลที่ระบบปิดเอง ต้องไม่ตกหล่นจากป้าย
+      const paidBills = await queries.listCustomerPaidBills()
+      expect(paidBills.map((bill) => bill.tableId)).toContain(table.id)
+      expect(paidBills[0]?.saleNumber).toBe(sale?.saleNumber)
     })
   })
 
