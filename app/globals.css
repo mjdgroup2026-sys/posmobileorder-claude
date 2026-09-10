@@ -494,11 +494,6 @@
     color: var(--warning);
     border-color: color-mix(in srgb, var(--warning) 25%, transparent);
   }
-  .alert-banner.success {
-    background: var(--success-bg);
-    color: var(--success);
-    border-color: color-mix(in srgb, var(--success) 25%, transparent);
-  }
 
   /* ───────────── เมนู sidebar ───────────── */
   .nav-item {
